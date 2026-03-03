@@ -1,0 +1,734 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USERS & AUTH ───────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  username      String   @unique
+  displayName   String
+  passwordHash  String?
+  avatarUrl     String?
+  tier          UserTier @default(FREE)
+  
+  // OAuth
+  googleId      String?  @unique
+  appleId       String?  @unique
+  
+  // Stripe
+  stripeCustomerId    String?
+  stripeSubscriptionId String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relations
+  ownedLeagues  League[]       @relation("LeagueOwner")
+  teams         Team[]
+  sentTrades    Trade[]        @relation("TradeSender")
+  receivedTrades Trade[]       @relation("TradeReceiver")
+  chatMessages  ChatMessage[]
+  draftPicks    DraftPick[]
+  notifications Notification[]
+  tradeVotes    TradeVote[]
+  waiverClaims  WaiverClaim[]
+  mockDrafts    MockDraft[]
+
+  @@index([email])
+  @@index([username])
+}
+
+enum UserTier {
+  FREE
+  PRO
+  COMMISSIONER_PLUS
+}
+
+// ─── LEAGUES ────────────────────────────────────────────────────
+
+model League {
+  id              String       @id @default(uuid())
+  name            String
+  description     String?
+  logoUrl         String?
+  
+  // Settings
+  format          LeagueFormat @default(HEAD_TO_HEAD_POINTS)
+  scoringType     ScoringType  @default(POINTS)
+  maxTeams        Int          @default(12)
+  rosterSize      Int          @default(25)
+  isPublic        Boolean      @default(false)
+  inviteCode      String       @unique @default(uuid())
+  
+  // Season
+  seasonYear      Int
+  status          LeagueStatus @default(PRE_DRAFT)
+  
+  // Draft settings
+  draftType       DraftType    @default(SNAKE)
+  draftDate       DateTime?
+  draftOrder      Json?        // Array of team IDs in draft order
+  pickTimerSeconds Int         @default(90)
+  
+  // Roster config
+  rosterConfig    Json         // { C: 1, "1B": 1, "2B": 1, "3B": 1, SS: 1, OF: 3, UTIL: 1, SP: 5, RP: 2, P: 0, BN: 5, IL: 2, MiLB: 0 }
+  
+  // Scoring config
+  scoringConfig   Json         // Detailed scoring rules per category
+  
+  // Waiver settings
+  waiverType      WaiverType   @default(FAAB)
+  waiverBudget    Int          @default(100)
+  waiverProcessDay String?     // e.g., "wednesday"
+  
+  // Lineup settings
+  lineupChangeFreq LineupFrequency @default(DAILY)
+  tradeDeadline   DateTime?
+  tradeReviewType TradeReviewType @default(COMMISSIONER)
+  
+  // Keeper/Dynasty
+  leagueType      LeagueSeasonType @default(REDRAFT)
+  maxKeepers      Int          @default(0)
+  
+  // Owner
+  ownerId         String
+  owner           User         @relation("LeagueOwner", fields: [ownerId], references: [id])
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  // Relations
+  teams           Team[]
+  draft           Draft?
+  trades          Trade[]
+  chatMessages    ChatMessage[]
+  scoringPeriods  ScoringPeriod[]
+  waiverClaims    WaiverClaim[]
+  transactions    Transaction[]
+
+  @@index([inviteCode])
+  @@index([ownerId])
+  @@index([status])
+}
+
+enum LeagueFormat {
+  HEAD_TO_HEAD_POINTS
+  HEAD_TO_HEAD_CATEGORIES
+  ROTISSERIE
+  POINTS_ONLY
+  BEST_BALL
+}
+
+enum ScoringType {
+  POINTS
+  CATEGORIES
+  HYBRID
+}
+
+enum DraftType {
+  SNAKE
+  AUCTION
+  LINEAR
+  THIRD_ROUND_REVERSAL
+  CUSTOM
+}
+
+enum LeagueStatus {
+  PRE_DRAFT
+  DRAFTING
+  IN_SEASON
+  PLAYOFFS
+  OFFSEASON
+  COMPLETED
+}
+
+enum WaiverType {
+  FAAB
+  ROLLING_PRIORITY
+  REVERSE_STANDINGS
+}
+
+enum LineupFrequency {
+  DAILY
+  WEEKLY
+}
+
+enum TradeReviewType {
+  COMMISSIONER
+  LEAGUE_VOTE
+  NONE
+}
+
+enum LeagueSeasonType {
+  REDRAFT
+  KEEPER
+  DYNASTY
+}
+
+// ─── TEAMS ──────────────────────────────────────────────────────
+
+model Team {
+  id            String   @id @default(uuid())
+  name          String
+  abbreviation  String?
+  logoUrl       String?
+  
+  // Budget
+  faabBudget    Int      @default(100)
+  auctionBudget Int?     // For auction drafts
+  
+  // Standing
+  wins          Int      @default(0)
+  losses        Int      @default(0)
+  ties          Int      @default(0)
+  pointsFor     Float    @default(0)
+  pointsAgainst Float    @default(0)
+  
+  // Waiver
+  waiverPriority Int     @default(0)
+  
+  // Relations
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  leagueId      String
+  league        League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  
+  roster        RosterEntry[]
+  draftPicks    DraftPick[]
+  sentTrades    Trade[]  @relation("TradeFromTeam")
+  receivedTrades Trade[] @relation("TradeToTeam")
+  
+  homeMatchups  Matchup[] @relation("HomeTeam")
+  awayMatchups  Matchup[] @relation("AwayTeam")
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, leagueId])
+  @@index([leagueId])
+  @@index([userId])
+}
+
+// ─── PLAYERS ────────────────────────────────────────────────────
+
+model Player {
+  id              String   @id @default(uuid())
+  mlbId           Int      @unique
+  firstName       String
+  lastName        String
+  fullName        String
+  
+  // Bio
+  team            String   // MLB team abbreviation
+  teamFullName    String?
+  position        String   // Primary position
+  eligiblePositions String[] // All eligible positions
+  bats            String?  // L, R, S
+  throws          String?  // L, R
+  age             Int?
+  
+  // Status
+  status          PlayerStatus @default(ACTIVE)
+  injuryStatus    String?
+  injuryNote      String?
+  
+  // Images
+  headshotUrl     String?
+  
+  // Stats (current season summary - denormalized for speed)
+  gamesPlayed     Int      @default(0)
+  atBats          Int      @default(0)
+  hits            Int      @default(0)
+  homeRuns        Int      @default(0)
+  rbi             Int      @default(0)
+  stolenBases     Int      @default(0)
+  battingAvg      Float    @default(0)
+  obp             Float    @default(0)
+  slg             Float    @default(0)
+  ops             Float    @default(0)
+  
+  // Pitcher stats
+  wins_stat       Int      @default(0)
+  losses_stat     Int      @default(0)
+  era             Float    @default(0)
+  whip            Float    @default(0)
+  strikeouts      Int      @default(0)
+  saves           Int      @default(0)
+  inningsPitched  Float    @default(0)
+  
+  // Projections
+  projectedPoints Float?
+  rosPercentage   Float?   // Rest-of-season ownership %
+  
+  // Advanced
+  exitVelocity    Float?
+  xBA             Float?
+  sprintSpeed     Float?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  rosterEntries   RosterEntry[]
+  draftPicks      DraftPick[]
+  playerStats     PlayerStat[]
+  newsItems       PlayerNews[]
+  tradeAssets     TradeAsset[]
+  waiverClaims    WaiverClaim[]
+
+  @@index([team])
+  @@index([position])
+  @@index([fullName])
+  @@index([mlbId])
+}
+
+enum PlayerStatus {
+  ACTIVE
+  INJURED_LIST
+  MINOR_LEAGUES
+  FREE_AGENT
+  SUSPENDED
+  RETIRED
+}
+
+model PlayerStat {
+  id          String   @id @default(uuid())
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id])
+  
+  date        DateTime
+  season      Int
+  gameId      String?
+  
+  // Hitting
+  ab          Int      @default(0)
+  runs        Int      @default(0)
+  hits        Int      @default(0)
+  doubles     Int      @default(0)
+  triples     Int      @default(0)
+  hr          Int      @default(0)
+  rbi         Int      @default(0)
+  sb          Int      @default(0)
+  cs          Int      @default(0)
+  bb          Int      @default(0)
+  so          Int      @default(0)
+  hbp         Int      @default(0)
+  
+  // Pitching
+  ip          Float    @default(0)
+  pitcherH    Int      @default(0)
+  pitcherR    Int      @default(0)
+  pitcherER   Int      @default(0)
+  pitcherBB   Int      @default(0)
+  pitcherSO   Int      @default(0)
+  pitcherW    Int      @default(0)
+  pitcherL    Int      @default(0)
+  pitcherSV   Int      @default(0)
+  pitcherBS   Int      @default(0)
+  pitcherHLD  Int      @default(0)
+  
+  // Fantasy points (calculated)
+  fantasyPoints Float  @default(0)
+  
+  createdAt   DateTime @default(now())
+
+  @@index([playerId, date])
+  @@index([date])
+  @@index([season])
+}
+
+model PlayerNews {
+  id          String   @id @default(uuid())
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id])
+  
+  headline    String
+  body        String
+  source      String?
+  impactLevel String?  // "high", "medium", "low"
+  
+  publishedAt DateTime @default(now())
+
+  @@index([playerId])
+  @@index([publishedAt])
+}
+
+// ─── ROSTER ─────────────────────────────────────────────────────
+
+model RosterEntry {
+  id            String   @id @default(uuid())
+  
+  teamId        String
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  playerId      String
+  player        Player   @relation(fields: [playerId], references: [id])
+  
+  rosterSlot    String   // C, 1B, 2B, 3B, SS, OF, UTIL, SP, RP, P, BN, IL, MiLB
+  acquisitionType String @default("draft") // draft, trade, waiver, free_agent
+  acquisitionDate DateTime @default(now())
+  salary        Int?     // For keeper/dynasty salary tracking
+  contractYears Int?
+  
+  isActive      Boolean  @default(true)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([teamId, playerId])
+  @@index([teamId])
+  @@index([playerId])
+}
+
+// ─── DRAFT ──────────────────────────────────────────────────────
+
+model Draft {
+  id            String      @id @default(uuid())
+  leagueId      String      @unique
+  league        League      @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  
+  type          DraftType
+  status        DraftStatus @default(SCHEDULED)
+  
+  currentRound  Int         @default(1)
+  currentPick   Int         @default(1)
+  totalRounds   Int         @default(25)
+  
+  // Auction specific
+  auctionBudget Int?
+  nominationOrder Json?
+  
+  startedAt     DateTime?
+  completedAt   DateTime?
+  pausedAt      DateTime?
+  
+  // Timer
+  pickTimerSeconds Int      @default(90)
+  timerExpiresAt   DateTime?
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  picks         DraftPick[]
+
+  @@index([leagueId])
+}
+
+enum DraftStatus {
+  SCHEDULED
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+}
+
+model DraftPick {
+  id          String   @id @default(uuid())
+  draftId     String
+  draft       Draft    @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  
+  round       Int
+  pickNumber  Int      // Overall pick number
+  
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id])
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  playerId    String?
+  player      Player?  @relation(fields: [playerId], references: [id])
+  
+  // Auction specific
+  bidAmount   Int?
+  nominatedBy String?
+  
+  isAutoPick  Boolean  @default(false)
+  isKeeper    Boolean  @default(false)
+  
+  pickedAt    DateTime?
+  
+  createdAt   DateTime @default(now())
+
+  @@unique([draftId, pickNumber])
+  @@index([draftId])
+  @@index([teamId])
+  @@index([playerId])
+}
+
+model MockDraft {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  settings    Json     // League format, team count, scoring, etc.
+  results     Json?    // Full draft results
+  grade       String?  // AI-generated grade
+  analysis    String?  // AI-generated analysis
+  
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─── SCORING & MATCHUPS ─────────────────────────────────────────
+
+model ScoringPeriod {
+  id          String   @id @default(uuid())
+  leagueId    String
+  league      League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  
+  weekNumber  Int
+  startDate   DateTime
+  endDate     DateTime
+  isCurrent   Boolean  @default(false)
+  isPlayoffs  Boolean  @default(false)
+  
+  matchups    Matchup[]
+  
+  createdAt   DateTime @default(now())
+
+  @@unique([leagueId, weekNumber])
+  @@index([leagueId])
+}
+
+model Matchup {
+  id              String        @id @default(uuid())
+  scoringPeriodId String
+  scoringPeriod   ScoringPeriod @relation(fields: [scoringPeriodId], references: [id], onDelete: Cascade)
+  
+  homeTeamId      String
+  homeTeam        Team          @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId      String
+  awayTeam        Team          @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  
+  homeScore       Float         @default(0)
+  awayScore       Float         @default(0)
+  
+  // Category scores (for H2H categories)
+  homeCategories  Json?
+  awayCategories  Json?
+  
+  status          MatchupStatus @default(SCHEDULED)
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([scoringPeriodId])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+}
+
+enum MatchupStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+}
+
+// ─── TRADES ─────────────────────────────────────────────────────
+
+model Trade {
+  id            String      @id @default(uuid())
+  leagueId      String
+  league        League      @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  
+  // Proposer
+  fromTeamId    String
+  fromTeam      Team        @relation("TradeFromTeam", fields: [fromTeamId], references: [id])
+  fromUserId    String
+  fromUser      User        @relation("TradeSender", fields: [fromUserId], references: [id])
+  
+  // Receiver
+  toTeamId      String
+  toTeam        Team        @relation("TradeToTeam", fields: [toTeamId], references: [id])
+  toUserId      String
+  toUser        User        @relation("TradeReceiver", fields: [toUserId], references: [id])
+  
+  status        TradeStatus @default(PENDING)
+  
+  // AI Analysis
+  aiAnalysis    String?
+  fairnessScore Float?     // 0-100
+  
+  // Voting
+  votesRequired Int        @default(0)
+  vetoDeadline  DateTime?
+  
+  message       String?    // Optional message with trade
+  
+  proposedAt    DateTime   @default(now())
+  respondedAt   DateTime?
+  processedAt   DateTime?
+  
+  assets        TradeAsset[]
+  votes         TradeVote[]
+
+  @@index([leagueId])
+  @@index([fromTeamId])
+  @@index([toTeamId])
+}
+
+enum TradeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  VETOED
+  CANCELLED
+  PROCESSED
+}
+
+model TradeAsset {
+  id        String @id @default(uuid())
+  tradeId   String
+  trade     Trade  @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  
+  playerId  String
+  player    Player @relation(fields: [playerId], references: [id])
+  
+  fromTeamId String // Which team is giving this player
+  toTeamId   String // Which team is receiving this player
+  
+  // For keeper/dynasty
+  draftPickRound Int?
+  draftPickYear  Int?
+
+  @@index([tradeId])
+}
+
+model TradeVote {
+  id      String  @id @default(uuid())
+  tradeId String
+  trade   Trade   @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User    @relation(fields: [userId], references: [id])
+  
+  isVeto  Boolean
+  
+  createdAt DateTime @default(now())
+
+  @@unique([tradeId, userId])
+}
+
+// ─── WAIVERS & TRANSACTIONS ────────────────────────────────────
+
+model WaiverClaim {
+  id          String       @id @default(uuid())
+  leagueId    String
+  league      League       @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  teamId      String
+  
+  playerId    String
+  player      Player       @relation(fields: [playerId], references: [id])
+  
+  dropPlayerId String?     // Player to drop if claim succeeds
+  
+  bidAmount   Int          @default(0) // FAAB bid
+  priority    Int          @default(0)
+  
+  status      WaiverStatus @default(PENDING)
+  
+  createdAt   DateTime     @default(now())
+  processedAt DateTime?
+
+  @@index([leagueId])
+  @@index([playerId])
+}
+
+enum WaiverStatus {
+  PENDING
+  SUCCESSFUL
+  OUTBID
+  CANCELLED
+  FAILED
+}
+
+model Transaction {
+  id          String          @id @default(uuid())
+  leagueId    String
+  league      League          @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  
+  type        TransactionType
+  description String
+  
+  teamId      String?
+  playerId    String?
+  
+  metadata    Json?           // Additional details
+  
+  createdAt   DateTime        @default(now())
+
+  @@index([leagueId])
+  @@index([createdAt])
+}
+
+enum TransactionType {
+  DRAFT_PICK
+  TRADE
+  WAIVER_CLAIM
+  FREE_AGENT_ADD
+  DROP
+  LINEUP_CHANGE
+  COMMISSIONER_ACTION
+}
+
+// ─── CHAT ───────────────────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  leagueId  String
+  league    League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  content   String
+  type      MessageType @default(TEXT)
+  
+  // For reactions
+  reactions Json?    // { "👍": ["userId1", "userId2"], "😂": ["userId3"] }
+  
+  // For system messages
+  metadata  Json?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leagueId, createdAt])
+}
+
+enum MessageType {
+  TEXT
+  GIF
+  IMAGE
+  SYSTEM
+  TRADE_PROPOSAL
+  TRANSACTION
+}
+
+// ─── NOTIFICATIONS ──────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  type      String   // trade_proposal, draft_pick, score_update, etc.
+  title     String
+  body      String
+  
+  data      Json?    // Additional data for deep linking
+  
+  isRead    Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
