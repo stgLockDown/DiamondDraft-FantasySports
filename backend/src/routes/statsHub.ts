@@ -45,8 +45,8 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
     const { startDate } = request.query as any;
     const start = startDate || new Date().toISOString().split('T')[0];
     const end = new Date(new Date(start).getTime() + 6 * 86400000).toISOString().split('T')[0];
-    const games = await getScheduleRange(start, end);
-    return { startDate: start, endDate: end, gamesCount: games.length, games };
+    const result = await getScheduleRange(start, end);
+    return { startDate: start, endDate: end, dates: result.dates || [] };
   });
 
   // ═══════════════════════════════════════════════════════════
@@ -72,29 +72,71 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
     const profile = await getPlayerFullProfile(parseInt(mlbId), yr);
 
     // Also get our internal fantasy data if available
-    const dbPlayer = await fastify.prisma.player.findUnique({
-      where: { mlbId: parseInt(mlbId) },
-      include: {
-        playerStats: {
-          orderBy: { date: 'desc' },
-          take: 30,
+    let fantasy = null;
+    try {
+      const dbPlayer = await fastify.prisma.player.findUnique({
+        where: { mlbId: parseInt(mlbId) },
+        include: {
+          playerStats: {
+            orderBy: { date: 'desc' },
+            take: 30,
+          },
         },
-      },
-    });
+      });
+      if (dbPlayer) {
+        fantasy = {
+          projectedPoints: dbPlayer.projectedPoints,
+          rosPercentage: dbPlayer.rosPercentage,
+          recentFantasyPoints: dbPlayer.playerStats.map(s => ({
+            date: s.date,
+            gameId: s.gameId,
+            points: s.fantasyPoints,
+            hitting: { ab: s.ab, h: s.hits, hr: s.hr, rbi: s.rbi, r: s.runs, sb: s.sb, bb: s.bb, so: s.so },
+            pitching: { ip: s.ip, so: s.pitcherSO, er: s.pitcherER, w: s.pitcherW, sv: s.pitcherSV, h: s.pitcherH, bb: s.pitcherBB },
+          })),
+        };
+      }
+    } catch (_) { /* DB not available, that's fine */ }
+
+    // Restructure for frontend: { info, stats, gamelog, fantasy }
+    const hittingArr = [];
+    if (profile.hitting?.season) hittingArr.push({ season: yr, team: profile.currentTeam, stat: profile.hitting.season });
+    if (profile.hitting?.career) hittingArr.push({ season: 'Career', team: null, stat: profile.hitting.career });
+
+    const pitchingArr = [];
+    if (profile.pitching?.season) pitchingArr.push({ season: yr, team: profile.currentTeam, stat: profile.pitching.season });
+    if (profile.pitching?.career) pitchingArr.push({ season: 'Career', team: null, stat: profile.pitching.career });
 
     return {
-      ...profile,
-      fantasy: dbPlayer ? {
-        projectedPoints: dbPlayer.projectedPoints,
-        rosPercentage: dbPlayer.rosPercentage,
-        recentFantasyPoints: dbPlayer.playerStats.map(s => ({
-          date: s.date,
-          gameId: s.gameId,
-          points: s.fantasyPoints,
-          hitting: { ab: s.ab, h: s.hits, hr: s.hr, rbi: s.rbi, r: s.runs, sb: s.sb, bb: s.bb, so: s.so },
-          pitching: { ip: s.ip, so: s.pitcherSO, er: s.pitcherER, w: s.pitcherW, sv: s.pitcherSV, h: s.pitcherH, bb: s.pitcherBB },
-        })),
-      } : null,
+      info: {
+        id: profile.id,
+        fullName: profile.fullName,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        primaryPosition: profile.primaryPosition,
+        currentTeam: profile.currentTeam,
+        jerseyNumber: profile.primaryNumber,
+        batSide: profile.batSide,
+        pitchHand: profile.pitchHand,
+        height: profile.height,
+        weight: profile.weight,
+        currentAge: profile.currentAge,
+        birthDate: profile.birthDate,
+        birthCity: profile.birthCity,
+        birthStateProvince: profile.birthStateProvince,
+        birthCountry: profile.birthCountry,
+        mlbDebutDate: profile.mlbDebutDate,
+        headshotUrl: profile.headshotUrl,
+      },
+      stats: {
+        hitting: hittingArr,
+        pitching: pitchingArr,
+      },
+      gamelog: {
+        hitting: profile.recentGames?.hitting || [],
+        pitching: profile.recentGames?.pitching || [],
+      },
+      fantasy,
     };
   });
 
@@ -103,7 +145,32 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
     const { mlbId } = request.params as any;
     const { season } = request.query as any;
     const yr = season ? parseInt(season) : new Date().getFullYear();
-    return getPlayerSplits(parseInt(mlbId), yr);
+    const raw = await getPlayerSplits(parseInt(mlbId), yr);
+
+    // Restructure into array of split groups for frontend
+    const splits: any[] = [];
+    if (raw.vsPlatoon?.length) {
+      splits.push({
+        splitType: 'vs Left/Right',
+        group: 'vsPlatoon',
+        splits: raw.vsPlatoon.map((s: any) => ({
+          split: { description: s.split?.description || 'Unknown' },
+          stat: s.stat,
+        })),
+      });
+    }
+    if (raw.homeAway?.length) {
+      splits.push({
+        splitType: 'Home/Away',
+        group: 'homeAway',
+        splits: raw.homeAway.map((s: any) => ({
+          split: { description: s.split?.description || 'Unknown' },
+          stat: s.stat,
+        })),
+      });
+    }
+
+    return { splits };
   });
 
   // GET /api/stats/player/:mlbId/gamelog — Player game log
@@ -114,8 +181,10 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
     const profile = await getPlayerFullProfile(parseInt(mlbId), yr);
     return {
       player: { id: profile.id, fullName: profile.fullName, position: profile.primaryPosition },
-      hitting: profile.recentGames.hitting,
-      pitching: profile.recentGames.pitching,
+      gamelog: [
+        ...(profile.recentGames?.hitting || []),
+        ...(profile.recentGames?.pitching || []),
+      ],
     };
   });
 
@@ -133,15 +202,30 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
 
     return {
       season: yr,
-      players: profiles.filter(Boolean).map((p: any) => ({
-        id: p.id,
-        fullName: p.fullName,
-        position: p.primaryPosition?.abbreviation,
-        team: p.currentTeam?.name,
-        headshotUrl: p.headshotUrl,
-        hitting: p.hitting,
-        pitching: p.pitching,
-      })),
+      players: profiles.filter(Boolean).map((p: any) => {
+        const hittingArr = [];
+        if (p.hitting?.season) hittingArr.push({ season: yr, team: p.currentTeam, stat: p.hitting.season });
+        if (p.hitting?.career) hittingArr.push({ season: 'Career', team: p.currentTeam, stat: p.hitting.career });
+
+        const pitchingArr = [];
+        if (p.pitching?.season) pitchingArr.push({ season: yr, team: p.currentTeam, stat: p.pitching.season });
+        if (p.pitching?.career) pitchingArr.push({ season: 'Career', team: p.currentTeam, stat: p.pitching.career });
+
+        return {
+          mlbId: p.id,
+          info: {
+            id: p.id,
+            fullName: p.fullName,
+            primaryPosition: p.primaryPosition,
+            currentTeam: p.currentTeam,
+            headshotUrl: p.headshotUrl,
+          },
+          stats: {
+            hitting: hittingArr,
+            pitching: pitchingArr,
+          },
+        };
+      }),
     };
   });
 
@@ -200,7 +284,7 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
     return { season: yr, teams };
   });
 
-  // GET /api/stats/teams/:teamId — Team detail with roster
+  // GET /api/stats/teams/:teamId — Team detail with roster and stats
   fastify.get('/api/stats/teams/:teamId', async (request) => {
     const { teamId } = request.params as any;
     const { season } = request.query as any;
@@ -218,10 +302,69 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
       getTeamSeasonStats(numericId, yr),
     ]);
 
+    const teamInfo = rosterData.team || {};
+
+    // Flatten roster for frontend: each player gets { mlbId, fullName, position, jerseyNumber, stats }
+    // Try to get player stats from our DB first
+    let dbPlayers: Record<number, any> = {};
+    try {
+      const mlbIds = (rosterData.roster || []).map((r: any) => r.person?.id).filter(Boolean);
+      if (mlbIds.length > 0) {
+        const found = await fastify.prisma.player.findMany({
+          where: { mlbId: { in: mlbIds } },
+          select: {
+            mlbId: true, battingAvg: true, homeRuns: true, rbi: true, ops: true,
+            era: true, whip: true, wins_stat: true, losses_stat: true, strikeouts: true, saves: true,
+            gamesPlayed: true, stolenBases: true,
+          },
+        });
+        for (const p of found) {
+          dbPlayers[p.mlbId] = p;
+        }
+      }
+    } catch (_) { /* DB not available */ }
+
+    const roster = (rosterData.roster || []).map((r: any) => {
+      const mlbId = r.person?.id;
+      const dbP = dbPlayers[mlbId];
+      return {
+        mlbId,
+        id: mlbId,
+        fullName: r.person?.fullName,
+        position: r.position?.abbreviation || r.position?.name || 'Unknown',
+        jerseyNumber: r.jerseyNumber,
+        batSide: r.person?.batSide?.code,
+        throwHand: r.person?.pitchHand?.code,
+        status: r.status?.description,
+        stats: dbP ? {
+          avg: dbP.battingAvg ? dbP.battingAvg.toFixed(3) : null,
+          homeRuns: dbP.homeRuns,
+          rbi: dbP.rbi,
+          ops: dbP.ops ? dbP.ops.toFixed(3) : null,
+          era: dbP.era ? dbP.era.toFixed(2) : null,
+          whip: dbP.whip ? dbP.whip.toFixed(2) : null,
+          wins: dbP.wins_stat,
+          losses: dbP.losses_stat,
+          strikeOuts: dbP.strikeouts,
+          saves: dbP.saves,
+          gamesPlayed: dbP.gamesPlayed,
+          stolenBases: dbP.stolenBases,
+        } : null,
+      };
+    });
+
     return {
       season: yr,
-      team: rosterData.team,
-      roster: rosterData.roster,
+      name: teamInfo.name,
+      teamName: teamInfo.teamName,
+      abbreviation: teamInfo.abbreviation,
+      venue: teamInfo.venue?.name,
+      record: teamInfo.record ? {
+        wins: teamInfo.record.wins,
+        losses: teamInfo.record.losses,
+        pct: teamInfo.record.winningPercentage,
+      } : null,
+      roster,
       stats,
     };
   });
@@ -271,59 +414,113 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
     const start = startDate || new Date().toISOString().split('T')[0];
     const end = endDate || start;
 
-    let games = await getScheduleRange(start, end);
+    const result = await getScheduleRange(start, end);
+    let dates = result.dates || [];
 
     // Filter by team if specified
     if (teamId) {
       const tid = parseInt(teamId) || MLB_TEAM_MAP_REVERSE[teamId.toUpperCase()] || 0;
       if (tid) {
-        games = games.filter(g => g.away.id === tid || g.home.id === tid);
+        dates = dates.map((d: any) => ({
+          ...d,
+          games: d.games.filter((g: any) =>
+            g.teams?.away?.team?.id === tid || g.teams?.home?.team?.id === tid
+          ),
+        })).filter((d: any) => d.games.length > 0);
       }
     }
 
-    return { startDate: start, endDate: end, gamesCount: games.length, games };
+    return { startDate: start, endDate: end, dates };
   });
 
   // ═══════════════════════════════════════════════════════════
   // SEARCH (unified player search from DB + MLB API)
   // ═══════════════════════════════════════════════════════════
 
-  // GET /api/stats/search — Search players
+  // GET /api/stats/search — Search players (DB first, fallback to MLB API)
   fastify.get('/api/stats/search', async (request) => {
     const { q, position, team, limit } = request.query as any;
     if (!q || q.length < 2) return { players: [] };
 
     const lim = Math.min(parseInt(limit) || 25, 50);
 
-    const where: any = {
-      fullName: { contains: q, mode: 'insensitive' },
-    };
-    if (position) where.position = position;
-    if (team) where.team = team.toUpperCase();
+    // Try DB first
+    try {
+      const where: any = {
+        fullName: { contains: q, mode: 'insensitive' },
+      };
+      if (position) where.position = position;
+      if (team) where.team = team.toUpperCase();
 
-    const players = await fastify.prisma.player.findMany({
-      where,
-      take: lim,
-      orderBy: { gamesPlayed: 'desc' },
-      select: {
-        id: true,
-        mlbId: true,
-        fullName: true,
-        team: true,
-        position: true,
-        eligiblePositions: true,
-        headshotUrl: true,
-        gamesPlayed: true,
-        battingAvg: true,
-        homeRuns: true,
-        rbi: true,
-        era: true,
-        wins_stat: true,
-        saves: true,
-        status: true,
-      },
-    });
+      const players = await fastify.prisma.player.findMany({
+        where,
+        take: lim,
+        orderBy: { gamesPlayed: 'desc' },
+        select: {
+          id: true,
+          mlbId: true,
+          fullName: true,
+          team: true,
+          position: true,
+          eligiblePositions: true,
+          headshotUrl: true,
+          gamesPlayed: true,
+          battingAvg: true,
+          homeRuns: true,
+          rbi: true,
+          era: true,
+          wins_stat: true,
+          saves: true,
+          status: true,
+        },
+      });
 
-    return { query: q, count: players.length, players };
+      if (players.length > 0) {
+        return {
+          query: q,
+          count: players.length,
+          players: players.map(p => ({
+            ...p,
+            stats: {
+              avg: p.battingAvg ? p.battingAvg.toFixed(3) : null,
+              homeRuns: p.homeRuns,
+              rbi: p.rbi,
+              era: p.era ? p.era.toFixed(2) : null,
+              wins: p.wins_stat,
+              saves: p.saves,
+            },
+          })),
+        };
+      }
+    } catch (_) { /* DB not available */ }
+
+    // Fallback: search via MLB API
+    try {
+      const searchUrl = `https://lookup-service-prod.mlb.com/json/named.search_player_all.bam?sport_code='mlb'&active_sw='Y'&name_part='${encodeURIComponent(q)}%25'`;
+      const resp = await fetch(searchUrl);
+      const data: any = await resp.json();
+      const rows = data?.search_player_all?.queryResults?.row;
+      if (!rows) return { query: q, count: 0, players: [] };
+
+      const results = Array.isArray(rows) ? rows : [rows];
+      const filtered = position
+        ? results.filter((r: any) => r.position?.toUpperCase() === position.toUpperCase())
+        : results;
+
+      return {
+        query: q,
+        count: filtered.length,
+        players: filtered.slice(0, lim).map((r: any) => ({
+          mlbId: parseInt(r.player_id),
+          fullName: `${r.name_first} ${r.name_last}`,
+          team: r.team_abbrev,
+          position: r.position,
+          headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_80,q_auto:best/v1/people/${r.player_id}/headshot/silo/current`,
+          stats: null,
+        })),
+      };
+    } catch (_) {
+      return { query: q, count: 0, players: [] };
+    }
   });
 }

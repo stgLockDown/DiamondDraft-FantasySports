@@ -261,8 +261,8 @@ export async function getGameBoxscore(gamePk: number): Promise<any> {
 // ─── STANDINGS ────────────────────────────────────────────────
 
 export async function getStandings(season: number = new Date().getFullYear()): Promise<any> {
-  // AL=103, NL=104
-  return fetchJSON(`${MLB_API_BASE}/standings?leagueId=103,104&season=${season}`);
+  // AL=103, NL=104 — hydrate division & league to get names
+  return fetchJSON(`${MLB_API_BASE}/standings?leagueId=103,104&season=${season}&hydrate=division,league`);
 }
 
 // ─── STAT LEADERS ─────────────────────────────────────────────
@@ -380,6 +380,9 @@ export async function getPlayerFullProfile(playerId: number, season: number = ne
     currentTeam: person.currentTeam,
     mlbDebutDate: person.mlbDebutDate,
     nickName: person.nickName,
+    birthCity: person.birthCity,
+    birthStateProvince: person.birthStateProvince,
+    birthCountry: person.birthCountry,
     headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${person.id}/headshot/67/current`,
     hitting: hittingStats,
     pitching: pitchingStats,
@@ -451,49 +454,51 @@ export async function getTeamSeasonStats(teamId: number, season: number = new Da
 
 // ─── SCHEDULE WITH SCORES ─────────────────────────────────────
 
-export async function getScheduleRange(startDate: string, endDate: string): Promise<any[]> {
+export async function getScheduleRange(startDate: string, endDate: string): Promise<any> {
   const data = await fetchJSON(
     `${MLB_API_BASE}/schedule?sportId=1&startDate=${startDate}&endDate=${endDate}&hydrate=linescore,team`
   );
-  const allGames: any[] = [];
-  for (const dateEntry of (data.dates || [])) {
-    for (const g of dateEntry.games) {
-      allGames.push({
-        gamePk: g.gamePk,
-        gameDate: g.gameDate,
-        officialDate: g.officialDate || dateEntry.date,
-        status: g.status?.detailedState,
-        abstractState: g.status?.abstractGameState,
+
+  // Return dates array structure so frontend can group by date
+  const dates = (data.dates || []).map((dateEntry: any) => ({
+    date: dateEntry.date,
+    totalGames: dateEntry.totalGames || dateEntry.games?.length || 0,
+    games: (dateEntry.games || []).map((g: any) => ({
+      gamePk: g.gamePk,
+      gameDate: g.gameDate,
+      officialDate: g.officialDate || dateEntry.date,
+      status: g.status || {},
+      teams: {
         away: {
-          id: g.teams.away.team.id,
-          name: g.teams.away.team.name,
-          abbreviation: g.teams.away.team.abbreviation,
+          team: {
+            id: g.teams.away.team.id,
+            name: g.teams.away.team.name,
+            abbreviation: g.teams.away.team.abbreviation || g.teams.away.team.teamName,
+          },
           score: g.teams.away.score ?? null,
-          wins: g.teams.away.leagueRecord?.wins,
-          losses: g.teams.away.leagueRecord?.losses,
+          leagueRecord: g.teams.away.leagueRecord,
         },
         home: {
-          id: g.teams.home.team.id,
-          name: g.teams.home.team.name,
-          abbreviation: g.teams.home.team.abbreviation,
+          team: {
+            id: g.teams.home.team.id,
+            name: g.teams.home.team.name,
+            abbreviation: g.teams.home.team.abbreviation || g.teams.home.team.teamName,
+          },
           score: g.teams.home.score ?? null,
-          wins: g.teams.home.leagueRecord?.wins,
-          losses: g.teams.home.leagueRecord?.losses,
+          leagueRecord: g.teams.home.leagueRecord,
         },
-        linescore: g.linescore ? {
-          currentInning: g.linescore.currentInning,
-          inningHalf: g.linescore.inningHalf,
-          innings: g.linescore.innings?.map((inn: any) => ({
-            num: inn.num,
-            away: { runs: inn.away?.runs },
-            home: { runs: inn.home?.runs },
-          })),
-        } : null,
-        venue: g.venue?.name,
-      });
-    }
-  }
-  return allGames;
+      },
+      linescore: g.linescore ? {
+        currentInning: g.linescore.currentInning,
+        currentInningOrdinal: g.linescore.currentInningOrdinal,
+        inningHalf: g.linescore.inningHalf,
+        innings: g.linescore.innings,
+      } : null,
+      venue: g.venue?.name,
+    })),
+  }));
+
+  return { dates };
 }
 
 // ─── GAME DETAIL (full boxscore + linescore) ──────────────────
