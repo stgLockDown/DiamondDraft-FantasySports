@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DiamondDraft</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      -webkit-app-region: drag;
+      user-select: none;
+    }
+
+    .splash {
+      width: 440px;
+      height: 320px;
+      background: linear-gradient(145deg, #0A1628 0%, #0F2240 50%, #0A1628 100%);
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(29, 185, 84, 0.2);
+    }
+
+    .splash::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 40%, rgba(29, 185, 84, 0.08) 0%, transparent 50%);
+      animation: glow 4s ease-in-out infinite alternate;
+    }
+
+    @keyframes glow {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(5%, 5%); }
+    }
+
+    .logo {
+      font-size: 42px;
+      margin-bottom: 8px;
+      z-index: 1;
+      animation: bounce 2s ease-in-out infinite;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-5px); }
+    }
+
+    .title {
+      font-size: 28px;
+      font-weight: 700;
+      color: #F9FAFB;
+      letter-spacing: -0.5px;
+      z-index: 1;
+      margin-bottom: 4px;
+    }
+
+    .title span {
+      color: #1DB954;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: rgba(249, 250, 251, 0.4);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      z-index: 1;
+      margin-bottom: 40px;
+    }
+
+    #status {
+      font-size: 13px;
+      color: rgba(249, 250, 251, 0.6);
+      z-index: 1;
+      margin-bottom: 12px;
+    }
+
+    .progress-track {
+      width: 200px;
+      height: 3px;
+      background: rgba(249, 250, 251, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+      z-index: 1;
+    }
+
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #1DB954, #1ed760);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      animation: indeterminate 2s ease-in-out infinite;
+    }
+
+    @keyframes indeterminate {
+      0% { width: 0%; margin-left: 0; }
+      50% { width: 40%; margin-left: 30%; }
+      100% { width: 0%; margin-left: 100%; }
+    }
+
+    .version {
+      position: absolute;
+      bottom: 12px;
+      right: 16px;
+      font-size: 10px;
+      color: rgba(249, 250, 251, 0.2);
+      z-index: 1;
+    }
+  </style>
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+  <div class="splash">
+    <div class="logo">⚾</div>
+    <div class="title">Diamond<span>Draft</span></div>
+    <div class="subtitle">Fantasy Baseball</div>
+    <div id="status">Starting up...</div>
+    <div class="progress-track">
+      <div id="progress-bar"></div>
+    </div>
+    <div class="version">v1.0.0</div>
+  </div>
+</body>
+</html>

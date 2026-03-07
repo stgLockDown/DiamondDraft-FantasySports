@@ -14,7 +14,10 @@ import playerRoutes from './routes/players';
 import tradeRoutes from './routes/trades';
 import draftRoutes from './routes/draft';
 import chatRoutes from './routes/chat';
+import syncRoutes from './routes/sync';
 import { setupWebSocket } from './websocket/handler';
+import { startScheduler, stopScheduler } from './services/scheduler';
+import { fullSync } from './services/dataSync';
 
 async function buildServer() {
   const fastify = Fastify({
@@ -45,6 +48,7 @@ async function buildServer() {
   await fastify.register(tradeRoutes);
   await fastify.register(draftRoutes);
   await fastify.register(chatRoutes);
+  await fastify.register(syncRoutes);
 
   // ─── WEBSOCKET ──────────────────────────────────────────────
   setupWebSocket(fastify);
@@ -128,6 +132,26 @@ async function start() {
     console.log(`\n⚾ DiamondDraft API running at http://${config.host}:${config.port}`);
     console.log(`   Environment: ${config.nodeEnv}`);
     console.log(`   Health: http://localhost:${config.port}/api/health\n`);
+
+    // Start data sync scheduler
+    if (config.nodeEnv === 'production') {
+      startScheduler();
+      // Run initial sync on startup (in background)
+      console.log('⚾ Running initial MLB data sync...');
+      fullSync().catch(err => {
+        console.error('Initial sync failed:', err.message);
+      });
+    }
+
+    // Graceful shutdown
+    const shutdown = async () => {
+      console.log('\n⚾ Shutting down...');
+      stopScheduler();
+      await server.close();
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);
