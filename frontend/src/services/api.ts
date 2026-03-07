@@ -133,4 +133,53 @@ export const miscAPI = {
   mlbTeams: () => api.get('/api/mlb-teams'),
 };
 
+// ─── STATS HUB ──────────────────────────────────────────────────
+export const statsHubAPI = {
+  // Scoreboard
+  scoreboard: (date?: string) =>
+    api.get('/api/stats/scoreboard', { params: { date } }),
+  scoreboardWeek: (startDate?: string) =>
+    api.get('/api/stats/scoreboard/week', { params: { startDate } }),
+
+  // Game detail
+  gameDetail: (gamePk: number) =>
+    api.get(`/api/stats/game/${gamePk}`),
+
+  // Player profiles
+  playerProfile: (mlbId: number, season?: number) =>
+    api.get(`/api/stats/player/${mlbId}`, { params: { season } }),
+  playerSplits: (mlbId: number, season?: number) =>
+    api.get(`/api/stats/player/${mlbId}/splits`, { params: { season } }),
+  playerGamelog: (mlbId: number, season?: number) =>
+    api.get(`/api/stats/player/${mlbId}/gamelog`, { params: { season } }),
+  playerCompare: (ids: number[], season?: number) =>
+    api.get('/api/stats/player/compare', { params: { ids: ids.join(','), season } }),
+
+  // Leaderboards
+  leaders: (season?: number, limit?: number) =>
+    api.get('/api/stats/leaders', { params: { season, limit } }),
+  leaderCategory: (category: string, season?: number, limit?: number) =>
+    api.get(`/api/stats/leaders/${category}`, { params: { season, limit } }),
+  trending: (season?: number) =>
+    api.get('/api/stats/trending', { params: { season } }),
+
+  // Teams
+  teams: (season?: number) =>
+    api.get('/api/stats/teams', { params: { season } }),
+  teamDetail: (teamId: string | number, season?: number) =>
+    api.get(`/api/stats/teams/${teamId}`, { params: { season } }),
+
+  // Standings
+  standings: (season?: number) =>
+    api.get('/api/stats/standings', { params: { season } }),
+
+  // Schedule
+  schedule: (startDate: string, endDate?: string, teamId?: string) =>
+    api.get('/api/stats/schedule', { params: { startDate, endDate, teamId } }),
+
+  // Search
+  search: (q: string, position?: string, team?: string) =>
+    api.get('/api/stats/search', { params: { q, position, team } }),
+};
+
 export default api;

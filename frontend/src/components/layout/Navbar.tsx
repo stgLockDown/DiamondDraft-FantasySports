@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import {
   Menu, X, ChevronDown, LogOut, User, Settings, Trophy,
-  Bell, Diamond, Zap
+  Bell, Diamond, Zap, Activity
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -53,6 +53,10 @@ export default function Navbar() {
           display: 'flex', alignItems: 'center', gap: 8,
           flex: 1, justifyContent: 'center',
         }} className="desktop-nav">
+          <NavLink to="/stats">
+            <Activity size={15} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+            Stats Hub
+          </NavLink>
           {isAuthenticated && (
             <>
               <NavLink to="/dashboard">Dashboard</NavLink>
@@ -151,6 +155,7 @@ export default function Navbar() {
           padding: '16px 24px', borderTop: '1px solid var(--border-color)',
           background: 'var(--bg-secondary)',
         }} className="animate-fade-in">
+          <MobileNavLink to="/stats" onClick={() => setMobileOpen(false)}>⚡ Stats Hub</MobileNavLink>
           {isAuthenticated ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <MobileNavLink to="/dashboard" onClick={() => setMobileOpen(false)}>Dashboard</MobileNavLink>

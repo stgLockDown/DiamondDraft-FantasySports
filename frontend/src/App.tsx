@@ -13,6 +13,17 @@ import LeagueDetail from './pages/LeagueDetail';
 import Players from './pages/Players';
 import DraftRoom from './pages/DraftRoom';
 import Pricing from './pages/Pricing';
+import StatsHub from './pages/stats/StatsHub';
+import LiveScoreboard from './pages/stats/LiveScoreboard';
+import Standings from './pages/stats/Standings';
+import Leaderboards from './pages/stats/Leaderboards';
+import Teams from './pages/stats/Teams';
+import TeamDetail from './pages/stats/TeamDetail';
+import Schedule from './pages/stats/Schedule';
+import PlayerSearch from './pages/stats/PlayerSearch';
+import PlayerProfile from './pages/stats/PlayerProfile';
+import PlayerCompare from './pages/stats/PlayerCompare';
+import GameDetail from './pages/stats/GameDetail';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,6 +72,22 @@ function AppRoutes() {
         <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
         <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
         <Route path="/pricing" element={<Pricing />} />
+
+        {/* Stats Hub - Public routes */}
+        <Route path="/stats" element={<StatsHub />}>
+          <Route index element={<LiveScoreboard />} />
+          <Route path="standings" element={<Standings />} />
+          <Route path="leaders" element={<Leaderboards />} />
+          <Route path="teams" element={<Teams />} />
+          <Route path="teams/:teamId" element={<TeamDetail />} />
+          <Route path="schedule" element={<Schedule />} />
+          <Route path="players" element={<PlayerSearch />} />
+          <Route path="players/:mlbId" element={<PlayerProfile />} />
+          <Route path="compare" element={<PlayerCompare />} />
+        </Route>
+        <Route path="/stats/game/:gamePk" element={<StatsHub />}>
+          <Route index element={<GameDetail />} />
+        </Route>
 
         {/* Protected routes */}
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

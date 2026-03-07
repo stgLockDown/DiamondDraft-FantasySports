@@ -324,3 +324,288 @@ export const MLB_TEAM_MAP: Record<number, string> = {
   139: 'TB', 140: 'TEX', 141: 'TOR', 142: 'MIN', 143: 'PHI',
   144: 'ATL', 145: 'CHW', 146: 'MIA', 147: 'NYY', 158: 'MIL',
 };
+
+export const MLB_TEAM_MAP_REVERSE: Record<string, number> = Object.fromEntries(
+  Object.entries(MLB_TEAM_MAP).map(([id, abbr]) => [abbr, parseInt(id)])
+);
+
+// ─── PLAYER DETAILED PROFILE ──────────────────────────────────
+
+export async function getPlayerFullProfile(playerId: number, season: number = new Date().getFullYear()): Promise<any> {
+  const [info, hitting, pitching, gameLogHitting, gameLogPitching] = await Promise.all([
+    fetchJSON(`${MLB_API_BASE}/people/${playerId}`),
+    fetchJSON(`${MLB_API_BASE}/people/${playerId}/stats?stats=season,career&season=${season}&group=hitting`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/people/${playerId}/stats?stats=season,career&season=${season}&group=pitching`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/people/${playerId}/stats?stats=gameLog&season=${season}&group=hitting`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/people/${playerId}/stats?stats=gameLog&season=${season}&group=pitching`).catch(() => null),
+  ]);
+
+  const person = info.people[0];
+
+  // Parse season and career stats
+  const hittingStats: any = {};
+  if (hitting?.stats) {
+    for (const sg of hitting.stats) {
+      if (sg.type.displayName === 'season' && sg.splits?.length) hittingStats.season = sg.splits[0].stat;
+      if (sg.type.displayName === 'career' && sg.splits?.length) hittingStats.career = sg.splits[0].stat;
+    }
+  }
+
+  const pitchingStats: any = {};
+  if (pitching?.stats) {
+    for (const sg of pitching.stats) {
+      if (sg.type.displayName === 'season' && sg.splits?.length) pitchingStats.season = sg.splits[0].stat;
+      if (sg.type.displayName === 'career' && sg.splits?.length) pitchingStats.career = sg.splits[0].stat;
+    }
+  }
+
+  // Parse game logs (last 15 games)
+  const recentHittingGames = gameLogHitting?.stats?.[0]?.splits?.slice(-15).reverse() || [];
+  const recentPitchingGames = gameLogPitching?.stats?.[0]?.splits?.slice(-15).reverse() || [];
+
+  return {
+    id: person.id,
+    fullName: person.fullName,
+    firstName: person.firstName,
+    lastName: person.lastName,
+    primaryNumber: person.primaryNumber,
+    birthDate: person.birthDate,
+    currentAge: person.currentAge,
+    height: person.height,
+    weight: person.weight,
+    active: person.active,
+    primaryPosition: person.primaryPosition,
+    batSide: person.batSide,
+    pitchHand: person.pitchHand,
+    currentTeam: person.currentTeam,
+    mlbDebutDate: person.mlbDebutDate,
+    nickName: person.nickName,
+    headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${person.id}/headshot/67/current`,
+    hitting: hittingStats,
+    pitching: pitchingStats,
+    recentGames: {
+      hitting: recentHittingGames.map((g: any) => ({
+        date: g.date,
+        opponent: g.opponent?.abbreviation || g.opponent?.name,
+        isHome: g.isHome,
+        stat: g.stat,
+      })),
+      pitching: recentPitchingGames.map((g: any) => ({
+        date: g.date,
+        opponent: g.opponent?.abbreviation || g.opponent?.name,
+        isHome: g.isHome,
+        stat: g.stat,
+      })),
+    },
+  };
+}
+
+// ─── PLAYER SPLITS (vs L/R, home/away, monthly) ──────────────
+
+export async function getPlayerSplits(playerId: number, season: number = new Date().getFullYear()): Promise<any> {
+  const [vsPlatoon, homeAway] = await Promise.all([
+    fetchJSON(`${MLB_API_BASE}/people/${playerId}/stats?stats=vsPlatoon&season=${season}&group=hitting`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/people/${playerId}/stats?stats=homeAndAway&season=${season}&group=hitting`).catch(() => null),
+  ]);
+
+  return {
+    vsPlatoon: vsPlatoon?.stats?.[0]?.splits || [],
+    homeAway: homeAway?.stats?.[0]?.splits || [],
+  };
+}
+
+// ─── TEAM ROSTER WITH STATS ───────────────────────────────────
+
+export async function getTeamRosterWithStats(teamId: number, season: number = new Date().getFullYear()): Promise<any> {
+  const [teamInfo, roster] = await Promise.all([
+    fetchJSON(`${MLB_API_BASE}/teams/${teamId}?season=${season}`),
+    fetchJSON(`${MLB_API_BASE}/teams/${teamId}/roster?rosterType=active&season=${season}`),
+  ]);
+
+  return {
+    team: teamInfo.teams?.[0],
+    roster: roster.roster?.map((r: any) => ({
+      person: r.person,
+      jerseyNumber: r.jerseyNumber,
+      position: r.position,
+      status: r.status,
+    })) || [],
+  };
+}
+
+// ─── TEAM STATS ───────────────────────────────────────────────
+
+export async function getTeamSeasonStats(teamId: number, season: number = new Date().getFullYear()): Promise<any> {
+  const [hitting, pitching, fielding] = await Promise.all([
+    fetchJSON(`${MLB_API_BASE}/teams/${teamId}/stats?season=${season}&group=hitting&stats=season`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/teams/${teamId}/stats?season=${season}&group=pitching&stats=season`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/teams/${teamId}/stats?season=${season}&group=fielding&stats=season`).catch(() => null),
+  ]);
+
+  return {
+    hitting: hitting?.stats?.[0]?.splits?.[0]?.stat || null,
+    pitching: pitching?.stats?.[0]?.splits?.[0]?.stat || null,
+    fielding: fielding?.stats?.[0]?.splits?.[0]?.stat || null,
+  };
+}
+
+// ─── SCHEDULE WITH SCORES ─────────────────────────────────────
+
+export async function getScheduleRange(startDate: string, endDate: string): Promise<any[]> {
+  const data = await fetchJSON(
+    `${MLB_API_BASE}/schedule?sportId=1&startDate=${startDate}&endDate=${endDate}&hydrate=linescore,team`
+  );
+  const allGames: any[] = [];
+  for (const dateEntry of (data.dates || [])) {
+    for (const g of dateEntry.games) {
+      allGames.push({
+        gamePk: g.gamePk,
+        gameDate: g.gameDate,
+        officialDate: g.officialDate || dateEntry.date,
+        status: g.status?.detailedState,
+        abstractState: g.status?.abstractGameState,
+        away: {
+          id: g.teams.away.team.id,
+          name: g.teams.away.team.name,
+          abbreviation: g.teams.away.team.abbreviation,
+          score: g.teams.away.score ?? null,
+          wins: g.teams.away.leagueRecord?.wins,
+          losses: g.teams.away.leagueRecord?.losses,
+        },
+        home: {
+          id: g.teams.home.team.id,
+          name: g.teams.home.team.name,
+          abbreviation: g.teams.home.team.abbreviation,
+          score: g.teams.home.score ?? null,
+          wins: g.teams.home.leagueRecord?.wins,
+          losses: g.teams.home.leagueRecord?.losses,
+        },
+        linescore: g.linescore ? {
+          currentInning: g.linescore.currentInning,
+          inningHalf: g.linescore.inningHalf,
+          innings: g.linescore.innings?.map((inn: any) => ({
+            num: inn.num,
+            away: { runs: inn.away?.runs },
+            home: { runs: inn.home?.runs },
+          })),
+        } : null,
+        venue: g.venue?.name,
+      });
+    }
+  }
+  return allGames;
+}
+
+// ─── GAME DETAIL (full boxscore + linescore) ──────────────────
+
+export async function getGameDetail(gamePk: number): Promise<any> {
+  const [feed, boxscore, linescore] = await Promise.all([
+    fetchJSON(`${MLB_API_BASE}/game/${gamePk}/feed/live`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/game/${gamePk}/boxscore`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/game/${gamePk}/linescore`).catch(() => null),
+  ]);
+
+  // Extract key batting/pitching lines from boxscore
+  const extractPlayerStats = (teamPlayers: any) => {
+    if (!teamPlayers) return [];
+    return Object.values(teamPlayers).map((p: any) => ({
+      id: p.person?.id,
+      name: p.person?.fullName,
+      position: p.position?.abbreviation,
+      battingOrder: p.battingOrder,
+      batting: p.stats?.batting || null,
+      pitching: p.stats?.pitching || null,
+    })).filter((p: any) => p.batting || p.pitching);
+  };
+
+  return {
+    gamePk,
+    gameData: feed?.gameData ? {
+      status: feed.gameData.status,
+      datetime: feed.gameData.datetime,
+      teams: {
+        away: { id: feed.gameData.teams.away.id, name: feed.gameData.teams.away.name, abbreviation: feed.gameData.teams.away.abbreviation },
+        home: { id: feed.gameData.teams.home.id, name: feed.gameData.teams.home.name, abbreviation: feed.gameData.teams.home.abbreviation },
+      },
+      venue: feed.gameData.venue?.name,
+      weather: feed.gameData.weather,
+    } : null,
+    linescore: linescore ? {
+      currentInning: linescore.currentInning,
+      inningHalf: linescore.inningHalf,
+      innings: linescore.innings,
+      teams: linescore.teams,
+    } : null,
+    boxscore: boxscore ? {
+      away: {
+        teamStats: boxscore.teams?.away?.teamStats,
+        players: extractPlayerStats(boxscore.teams?.away?.players),
+        battingOrder: boxscore.teams?.away?.battingOrder,
+        pitchers: boxscore.teams?.away?.pitchers,
+      },
+      home: {
+        teamStats: boxscore.teams?.home?.teamStats,
+        players: extractPlayerStats(boxscore.teams?.home?.players),
+        battingOrder: boxscore.teams?.home?.battingOrder,
+        pitchers: boxscore.teams?.home?.pitchers,
+      },
+    } : null,
+    scoringPlays: feed?.liveData?.plays?.scoringPlays?.map((idx: number) => {
+      const play = feed.liveData.plays.allPlays[idx];
+      return {
+        inning: play?.about?.inning,
+        halfInning: play?.about?.halfInning,
+        description: play?.result?.description,
+        awayScore: play?.result?.awayScore,
+        homeScore: play?.result?.homeScore,
+      };
+    }) || [],
+  };
+}
+
+// ─── HOT/COLD PLAYERS (trending) ──────────────────────────────
+
+export async function getHotColdPlayers(season: number = new Date().getFullYear()): Promise<any> {
+  // Get leaders in last 7 days and last 30 days
+  const [hr7, avg7, rbi7, k7, era7] = await Promise.all([
+    fetchJSON(`${MLB_API_BASE}/stats/leaders?leaderCategories=homeRuns&season=${season}&sportId=1&limit=10&statType=statsSingleSeason`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/stats/leaders?leaderCategories=battingAverage&season=${season}&sportId=1&limit=10&statType=statsSingleSeason`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/stats/leaders?leaderCategories=runsBattedIn&season=${season}&sportId=1&limit=10&statType=statsSingleSeason`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/stats/leaders?leaderCategories=strikeouts&season=${season}&sportId=1&limit=10&statType=statsSingleSeason`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/stats/leaders?leaderCategories=earnedRunAverage&season=${season}&sportId=1&limit=10&statType=statsSingleSeason`).catch(() => null),
+  ]);
+
+  return {
+    homeRuns: hr7?.leagueLeaders?.[0]?.leaders || [],
+    battingAverage: avg7?.leagueLeaders?.[0]?.leaders || [],
+    rbi: rbi7?.leagueLeaders?.[0]?.leaders || [],
+    strikeouts: k7?.leagueLeaders?.[0]?.leaders || [],
+    era: era7?.leagueLeaders?.[0]?.leaders || [],
+  };
+}
+
+// ─── MULTIPLE STAT LEADER CATEGORIES ──────────────────────────
+
+export async function getMultipleLeaders(
+  categories: string[],
+  season: number = new Date().getFullYear(),
+  limit: number = 10
+): Promise<Record<string, any[]>> {
+  const results: Record<string, any[]> = {};
+  
+  // Fetch in parallel batches of 5
+  for (let i = 0; i < categories.length; i += 5) {
+    const batch = categories.slice(i, i + 5);
+    const promises = batch.map(cat =>
+      fetchJSON(`${MLB_API_BASE}/stats/leaders?leaderCategories=${cat}&season=${season}&sportId=1&limit=${limit}`)
+        .then(data => ({ cat, leaders: data.leagueLeaders?.[0]?.leaders || [] }))
+        .catch(() => ({ cat, leaders: [] }))
+    );
+    const batchResults = await Promise.all(promises);
+    for (const r of batchResults) {
+      results[r.cat] = r.leaders;
+    }
+  }
+
+  return results;
+}
