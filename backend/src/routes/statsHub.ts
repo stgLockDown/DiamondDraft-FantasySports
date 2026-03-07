@@ -64,6 +64,47 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
   // PLAYER PROFILES
   // ═══════════════════════════════════════════════════════════
 
+  // GET /api/stats/player/compare — Compare 2-4 players side by side
+  fastify.get('/api/stats/player/compare', async (request) => {
+    const { ids, season } = request.query as any;
+    if (!ids) return { error: 'Provide player MLB IDs as comma-separated list: ?ids=660271,592450' };
+
+    const mlbIds = ids.split(',').map((id: string) => parseInt(id.trim())).slice(0, 4);
+    const yr = season ? parseInt(season) : new Date().getFullYear();
+
+    const profiles = await Promise.all(
+      mlbIds.map((id: number) => getPlayerFullProfile(id, yr).catch(() => null))
+    );
+
+    return {
+      season: yr,
+      players: profiles.filter(Boolean).map((p: any) => {
+        const hittingArr = [];
+        if (p.hitting?.season) hittingArr.push({ season: yr, team: p.currentTeam, stat: p.hitting.season });
+        if (p.hitting?.career) hittingArr.push({ season: 'Career', team: p.currentTeam, stat: p.hitting.career });
+
+        const pitchingArr = [];
+        if (p.pitching?.season) pitchingArr.push({ season: yr, team: p.currentTeam, stat: p.pitching.season });
+        if (p.pitching?.career) pitchingArr.push({ season: 'Career', team: p.currentTeam, stat: p.pitching.career });
+
+        return {
+          mlbId: p.id,
+          info: {
+            id: p.id,
+            fullName: p.fullName,
+            primaryPosition: p.primaryPosition,
+            currentTeam: p.currentTeam,
+            headshotUrl: p.headshotUrl,
+          },
+          stats: {
+            hitting: hittingArr,
+            pitching: pitchingArr,
+          },
+        };
+      }),
+    };
+  });
+
   // GET /api/stats/player/:mlbId — Full player profile with season/career stats + game log
   fastify.get('/api/stats/player/:mlbId', async (request) => {
     const { mlbId } = request.params as any;
@@ -188,46 +229,6 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
     };
   });
 
-  // GET /api/stats/player/compare — Compare 2-4 players side by side
-  fastify.get('/api/stats/player/compare', async (request) => {
-    const { ids, season } = request.query as any;
-    if (!ids) return { error: 'Provide player MLB IDs as comma-separated list: ?ids=660271,592450' };
-
-    const mlbIds = ids.split(',').map((id: string) => parseInt(id.trim())).slice(0, 4);
-    const yr = season ? parseInt(season) : new Date().getFullYear();
-
-    const profiles = await Promise.all(
-      mlbIds.map((id: number) => getPlayerFullProfile(id, yr).catch(() => null))
-    );
-
-    return {
-      season: yr,
-      players: profiles.filter(Boolean).map((p: any) => {
-        const hittingArr = [];
-        if (p.hitting?.season) hittingArr.push({ season: yr, team: p.currentTeam, stat: p.hitting.season });
-        if (p.hitting?.career) hittingArr.push({ season: 'Career', team: p.currentTeam, stat: p.hitting.career });
-
-        const pitchingArr = [];
-        if (p.pitching?.season) pitchingArr.push({ season: yr, team: p.currentTeam, stat: p.pitching.season });
-        if (p.pitching?.career) pitchingArr.push({ season: 'Career', team: p.currentTeam, stat: p.pitching.career });
-
-        return {
-          mlbId: p.id,
-          info: {
-            id: p.id,
-            fullName: p.fullName,
-            primaryPosition: p.primaryPosition,
-            currentTeam: p.currentTeam,
-            headshotUrl: p.headshotUrl,
-          },
-          stats: {
-            hitting: hittingArr,
-            pitching: pitchingArr,
-          },
-        };
-      }),
-    };
-  });
 
   // ═══════════════════════════════════════════════════════════
   // LEADERBOARDS
