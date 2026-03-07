@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { statsHubAPI } from '../../services/api';
-import { Trophy, TrendingUp, TrendingDown } from 'lucide-react';
+import { Trophy } from 'lucide-react';
 
 export default function Standings() {
   const { data, isLoading } = useQuery({

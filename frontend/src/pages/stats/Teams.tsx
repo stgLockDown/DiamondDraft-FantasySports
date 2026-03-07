@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Users, ChevronRight, MapPin } from 'lucide-react';
-import { statsHubAPI } from '../../services/api';
+import { ChevronRight, MapPin } from 'lucide-react';
 
 const DIVISIONS: Record<string, string[]> = {
   'AL East': ['NYY', 'BOS', 'TOR', 'BAL', 'TB'],

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { statsHubAPI } from '../../services/api';
-import { ChevronLeft, ChevronRight, Radio, Clock, MapPin } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Radio, Clock, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 function GameCard({ game }: { game: any }) {
@@ -105,7 +105,7 @@ function GameCard({ game }: { game: any }) {
 export default function LiveScoreboard() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['scoreboard', date],
     queryFn: () => statsHubAPI.scoreboard(date),
     refetchInterval: 30000, // Refresh every 30 seconds

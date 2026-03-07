@@ -41,7 +41,6 @@ export default function GameDetail() {
   const home = game.gameData?.teams?.home || {};
   const status = game.gameData?.status || {};
   const isLive = status.abstractGameState === 'Live';
-  const isFinal = status.abstractGameState === 'Final';
   const innings = linescore.innings || [];
 
   const awayBatters = boxscore.teams?.away?.batters || [];

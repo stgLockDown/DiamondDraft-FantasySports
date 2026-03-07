@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { statsHubAPI } from '../../services/api';
-import { BarChart3, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const HITTING_CATS = [
@@ -27,7 +27,7 @@ const PITCHING_CATS = [
   { key: 'inningsPitched', label: 'Innings Pitched', short: 'IP' },
 ];
 
-function LeaderCard({ category, leaders, label }: { category: string; leaders: any[]; label: string }) {
+function LeaderCard({ leaders, label }: { category?: string; leaders: any[]; label: string }) {
   const [expanded, setExpanded] = useState(false);
   const displayLeaders = expanded ? leaders : leaders.slice(0, 5);
 

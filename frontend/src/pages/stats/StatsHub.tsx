@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { BarChart3, Calendar, Trophy, Users, TrendingUp, Search, Activity } from 'lucide-react';
 

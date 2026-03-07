@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, TrendingUp, BarChart3, Calendar, User } from 'lucide-react';
+import { ArrowLeft, TrendingUp, BarChart3, Calendar } from 'lucide-react';
 import { statsHubAPI } from '../../services/api';
 
 type Tab = 'overview' | 'splits' | 'gamelog';
