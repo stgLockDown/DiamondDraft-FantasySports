@@ -54,6 +54,7 @@ export const authAPI = {
 export const leagueAPI = {
   getMyLeagues: () => api.get('/api/leagues'),
   getPublicLeagues: (page = 1) => api.get(`/api/leagues/public?page=${page}`),
+  findByCode: (code: string) => api.get(`/api/leagues/find-by-code?code=${encodeURIComponent(code)}`),
   getLeague: (id: string) => api.get(`/api/leagues/${id}`),
   createLeague: (data: any) => api.post('/api/leagues', data),
   updateLeague: (id: string, data: any) => api.patch(`/api/leagues/${id}`, data),

@@ -1,22 +1,19 @@
-# Fix: Load All MLB Players for Drafts
+# DiamondDraft - League Joining & Roster Slots
 
-## 1. Backend - New endpoint for all draftable players
-- [ ] Add `/api/stats/players/all` endpoint that fetches all MLB players with stats
-- [ ] Combine /sports/1/players (1470 players) with season hitting/pitching stats
-- [ ] Return full player list with projected points, position, team, stats
-- [ ] Cache results in memory to avoid hammering MLB API
+## League Joining Fixes
+- [x] Rewrite Leagues.tsx with join buttons on public league cards
+- [x] Add join modal with team name + invite code for private leagues
+- [x] Fix handleJoinByCode to actually find and join leagues
+- [x] Verify Leagues.tsx compiles
+- [ ] Add backend endpoint to find league by invite code (for private league join-by-code)
+- [ ] Add join button to LeagueDetail.tsx for non-members
+- [ ] Add isMember detection in LeagueDetail.tsx
 
-## 2. Mock Draft - Use new endpoint
-- [ ] Update MockDraft.tsx loadPlayers() to use new endpoint
-- [ ] Remove old leaders-based approach
-- [ ] Show all players (not just 150)
+## Roster Slot Fixes
+- [ ] Update roster tab in LeagueDetail.tsx to show required position slots from rosterConfig
+- [ ] Show empty slots that need to be filled (C, 1B, 2B, 3B, SS, OF, UTIL, SP, RP, BN, IL)
+- [ ] Display which slots are filled vs empty
 
-## 3. Real Draft - Use new endpoint  
-- [ ] Update DraftRoom.tsx to load all players from new endpoint
-- [ ] Remove 200-player limit
-- [ ] Fallback to DB if stats endpoint fails
-
-## 4. Verify & Push
-- [ ] TypeScript compiles (frontend + backend)
-- [ ] Full build passes
+## Build & Push
+- [ ] Full build test (frontend + backend)
 - [ ] Commit and push to GitHub

@@ -4,10 +4,18 @@ import { useAuthStore } from '../stores/authStore';
 import { leagueAPI, chatAPI } from '../services/api';
 import {
   Settings, Users, Trophy, MessageCircle, ArrowLeftRight,
-  BarChart3, Copy, Check, Send
+  BarChart3, Copy, Check, Send, LogIn, X, UserPlus
 } from 'lucide-react';
 
 type Tab = 'overview' | 'standings' | 'roster' | 'chat' | 'trades' | 'settings';
+
+// Default roster slot order for display
+const SLOT_ORDER = ['C', '1B', '2B', '3B', 'SS', 'OF', 'UTIL', 'SP', 'RP', 'P', 'BN', 'IL', 'MiLB'];
+const SLOT_LABELS: Record<string, string> = {
+  C: 'Catcher', '1B': 'First Base', '2B': 'Second Base', '3B': 'Third Base',
+  SS: 'Shortstop', OF: 'Outfield', UTIL: 'Utility', SP: 'Starting Pitcher',
+  RP: 'Relief Pitcher', P: 'Pitcher', BN: 'Bench', IL: 'Injured List', MiLB: 'Minor League',
+};
 
 export default function LeagueDetail() {
   const { id } = useParams<{ id: string }>();
@@ -19,6 +27,13 @@ export default function LeagueDetail() {
   const [copied, setCopied] = useState(false);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState('');
+
+  // Join modal state
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinTeamName, setJoinTeamName] = useState('');
+  const [joinInviteCode, setJoinInviteCode] = useState('');
+  const [joinError, setJoinError] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
 
   useEffect(() => {
     if (id) loadLeague();
@@ -58,6 +73,25 @@ export default function LeagueDetail() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleJoinLeague = async () => {
+    if (!id) return;
+    setJoinError('');
+    setJoinLoading(true);
+    try {
+      await leagueAPI.joinLeague(id, {
+        teamName: joinTeamName.trim() || undefined,
+        inviteCode: joinInviteCode.trim() || undefined,
+      });
+      setShowJoinModal(false);
+      await loadLeague(); // Refresh to show updated membership
+    } catch (e: any) {
+      const msg = e.response?.data?.error || 'Failed to join league';
+      setJoinError(msg);
+    } finally {
+      setJoinLoading(false);
+    }
+  };
+
   if (loading) return (
     <div className="container" style={{ padding: '40px 24px' }}>
       <div className="skeleton" style={{ height: 200, marginBottom: 24 }} />
@@ -68,6 +102,29 @@ export default function LeagueDetail() {
   if (!league) return null;
 
   const isCommissioner = league.ownerId === user?.id;
+  const isMember = league.teams?.some((t: any) => t.userId === user?.id);
+  const isFull = (league._count?.teams || league.teams?.length || 0) >= league.maxTeams;
+  const canJoin = !isMember && !isFull && league.status === 'PRE_DRAFT';
+
+  // Build roster config slots
+  const rosterConfig: Record<string, number> = league.rosterConfig || {};
+
+  // Build ordered slot list from rosterConfig
+  const buildSlotList = (): { slot: string; index: number }[] => {
+    const slots: { slot: string; index: number }[] = [];
+    const orderedKeys = SLOT_ORDER.filter(k => (rosterConfig[k] || 0) > 0);
+    // Also include any keys in rosterConfig not in SLOT_ORDER
+    Object.keys(rosterConfig).forEach(k => {
+      if (!SLOT_ORDER.includes(k) && rosterConfig[k] > 0) orderedKeys.push(k);
+    });
+    orderedKeys.forEach(key => {
+      const count = rosterConfig[key] || 0;
+      for (let i = 0; i < count; i++) {
+        slots.push({ slot: key, index: i });
+      }
+    });
+    return slots;
+  };
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'overview', label: 'Overview', icon: <BarChart3 size={16} /> },
@@ -103,10 +160,25 @@ export default function LeagueDetail() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={copyInvite} className="btn btn-secondary btn-sm">
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? 'Copied!' : 'Invite Code'}
-          </button>
+          {isMember && (
+            <button onClick={copyInvite} className="btn btn-secondary btn-sm">
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? 'Copied!' : 'Invite Code'}
+            </button>
+          )}
+          {canJoin && (
+            <button onClick={() => {
+              setJoinTeamName(user?.displayName ? `${user.displayName}'s Team` : 'My Team');
+              setJoinInviteCode('');
+              setJoinError('');
+              setShowJoinModal(true);
+            }} className="btn btn-primary btn-sm">
+              <UserPlus size={14} /> Join League
+            </button>
+          )}
+          {isFull && !isMember && (
+            <span className="badge badge-gray" style={{ padding: '6px 12px' }}>League Full</span>
+          )}
           {league.status === 'PRE_DRAFT' && isCommissioner && (
             <Link to={`/leagues/${id}/draft`} className="btn btn-primary btn-sm">
               Start Draft
@@ -115,7 +187,7 @@ export default function LeagueDetail() {
         </div>
       </div>
 
-      {/* ─── Tabs ────────────────────────────────────────────── */}
+      {/* ─── Tabs ──────────────────────────────────────────── */}
       <div style={{
         display: 'flex', gap: 4, marginBottom: 24, overflowX: 'auto',
         borderBottom: '1px solid var(--border-color)', paddingBottom: 0,
@@ -186,6 +258,34 @@ export default function LeagueDetail() {
                 ))}
               </div>
             </div>
+
+            {/* Roster Configuration */}
+            {Object.keys(rosterConfig).length > 0 && (
+              <div className="card">
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 16 }}>Roster Slots</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {SLOT_ORDER.filter(s => (rosterConfig[s] || 0) > 0).map(slot => (
+                    <div key={slot} style={{
+                      display: 'flex', justifyContent: 'space-between', padding: '6px 0',
+                      borderBottom: '1px solid rgba(26,45,82,0.3)', fontSize: '0.85rem',
+                    }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        <strong style={{ color: 'var(--text-primary)', marginRight: 8 }}>{slot}</strong>
+                        {SLOT_LABELS[slot] || slot}
+                      </span>
+                      <span style={{ fontWeight: 600 }}>×{rosterConfig[slot]}</span>
+                    </div>
+                  ))}
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', padding: '8px 0',
+                    fontSize: '0.85rem', fontWeight: 700, color: 'var(--green-400)',
+                  }}>
+                    <span>Total Roster Size</span>
+                    <span>{Object.values(rosterConfig).reduce((a: number, b: any) => a + (Number(b) || 0), 0)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -272,44 +372,141 @@ export default function LeagueDetail() {
         )}
 
         {activeTab === 'roster' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: 16 }}>
-            {league.teams?.map((team: any) => (
-              <div key={team.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={{
-                  padding: '12px 16px', borderBottom: '1px solid var(--border-color)',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{team.name}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{team.user?.displayName}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
+            {league.teams?.map((team: any) => {
+              const slotList = buildSlotList();
+              const rosterEntries: any[] = team.roster || [];
+
+              // Map roster entries to slots
+              const slotAssignments = slotList.map(({ slot, index }) => {
+                // Find all roster entries for this slot type
+                const entriesForSlot = rosterEntries.filter((e: any) => e.rosterSlot === slot);
+                const entry = entriesForSlot[index] || null;
+                return { slot, entry };
+              });
+
+              // Find any roster entries not matching a config slot (overflow)
+              const assignedIds = new Set(slotAssignments.filter(s => s.entry).map(s => s.entry.id));
+              const unassigned = rosterEntries.filter((e: any) => !assignedIds.has(e.id));
+
+              const filledCount = rosterEntries.length;
+              const totalSlots = slotList.length;
+
+              return (
+                <div key={team.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                  {/* Team header */}
+                  <div style={{
+                    padding: '12px 16px', borderBottom: '1px solid var(--border-color)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{team.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{team.user?.displayName}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{
+                        fontSize: '0.8rem', fontWeight: 600,
+                        color: filledCount >= totalSlots ? 'var(--green-400)' : 'var(--warning)',
+                      }}>
+                        {filledCount}/{totalSlots} slots filled
+                      </span>
+                    </div>
                   </div>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    {team.roster?.length || 0} players
-                  </span>
+
+                  {/* Slot-based roster */}
+                  <div style={{ maxHeight: 450, overflowY: 'auto' }}>
+                    {slotAssignments.map(({ slot, entry }, idx) => {
+                      const isHitter = ['C', '1B', '2B', '3B', 'SS', 'OF', 'UTIL'].includes(slot);
+                      const isBench = ['BN', 'IL', 'MiLB'].includes(slot);
+                      const isPitcher = ['SP', 'RP', 'P'].includes(slot);
+
+                      // Section dividers
+                      const prevSlot = idx > 0 ? slotAssignments[idx - 1].slot : null;
+                      const showDivider = idx === 0 ||
+                        (isHitter && !['C', '1B', '2B', '3B', 'SS', 'OF', 'UTIL'].includes(prevSlot || '')) ||
+                        (isPitcher && !['SP', 'RP', 'P'].includes(prevSlot || '')) ||
+                        (isBench && !['BN', 'IL', 'MiLB'].includes(prevSlot || ''));
+
+                      const sectionLabel = isHitter ? 'Hitters' : isPitcher ? 'Pitchers' : isBench ? 'Bench / IL' : '';
+
+                      return (
+                        <div key={`${slot}-${idx}`}>
+                          {showDivider && sectionLabel && (
+                            <div style={{
+                              padding: '6px 16px', fontSize: '0.7rem', fontWeight: 700,
+                              textTransform: 'uppercase', letterSpacing: '0.05em',
+                              color: 'var(--text-muted)', background: 'rgba(26,45,82,0.3)',
+                              borderBottom: '1px solid rgba(26,45,82,0.3)',
+                            }}>
+                              {sectionLabel}
+                            </div>
+                          )}
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 10, padding: '7px 16px',
+                            borderBottom: '1px solid rgba(26,45,82,0.2)', fontSize: '0.85rem',
+                            background: entry ? 'transparent' : 'rgba(26,45,82,0.08)',
+                          }}>
+                            <span style={{
+                              width: 32, fontWeight: 700, fontSize: '0.75rem', textAlign: 'center',
+                              color: entry ? 'var(--green-400)' : 'var(--text-muted)',
+                            }}>
+                              {slot}
+                            </span>
+                            {entry ? (
+                              <>
+                                <span style={{ flex: 1, fontWeight: 500 }}>{entry.player?.fullName}</span>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                                  {entry.player?.position} · {entry.player?.team}
+                                </span>
+                              </>
+                            ) : (
+                              <span style={{ flex: 1, color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>
+                                Empty
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Show unassigned players (if any don't match config slots) */}
+                    {unassigned.length > 0 && (
+                      <>
+                        <div style={{
+                          padding: '6px 16px', fontSize: '0.7rem', fontWeight: 700,
+                          textTransform: 'uppercase', letterSpacing: '0.05em',
+                          color: 'var(--warning)', background: 'rgba(26,45,82,0.3)',
+                          borderBottom: '1px solid rgba(26,45,82,0.3)',
+                        }}>
+                          Unassigned
+                        </div>
+                        {unassigned.map((entry: any) => (
+                          <div key={entry.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 10, padding: '7px 16px',
+                            borderBottom: '1px solid rgba(26,45,82,0.2)', fontSize: '0.85rem',
+                          }}>
+                            <span style={{ width: 32, fontWeight: 700, fontSize: '0.75rem', textAlign: 'center', color: 'var(--warning)' }}>
+                              {entry.rosterSlot || '?'}
+                            </span>
+                            <span style={{ flex: 1, fontWeight: 500 }}>{entry.player?.fullName}</span>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                              {entry.player?.position} · {entry.player?.team}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Empty state when no config and no roster */}
+                    {slotList.length === 0 && rosterEntries.length === 0 && (
+                      <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                        No players rostered yet
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                  {team.roster?.length > 0 ? team.roster.map((entry: any) => (
-                    <div key={entry.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px',
-                      borderBottom: '1px solid rgba(26,45,82,0.3)', fontSize: '0.85rem',
-                    }}>
-                      <span className={`pos-${entry.rosterSlot?.toLowerCase()}`}
-                        style={{ width: 28, fontWeight: 700, fontSize: '0.75rem' }}>
-                        {entry.rosterSlot}
-                      </span>
-                      <span style={{ flex: 1, fontWeight: 500 }}>{entry.player?.fullName}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        {entry.player?.team}
-                      </span>
-                    </div>
-                  )) : (
-                    <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                      No players rostered yet
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -347,6 +544,73 @@ export default function LeagueDetail() {
           </div>
         )}
       </div>
+
+      {/* ─── Join Modal ─────────────────────────────────────── */}
+      {showJoinModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(5,13,26,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          padding: 24,
+        }} onClick={() => setShowJoinModal(false)}>
+          <div className="card animate-slide-up" style={{
+            maxWidth: 440, width: '100%', padding: 32, position: 'relative',
+          }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowJoinModal(false)} style={{
+              position: 'absolute', top: 12, right: 12, background: 'none', border: 'none',
+              color: 'var(--text-muted)', cursor: 'pointer',
+            }}>
+              <X size={18} />
+            </button>
+
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: 6 }}>
+              Join {league.name}
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 24 }}>
+              {league.teams?.length}/{league.maxTeams} teams · {league.format?.replace(/_/g, ' ')}
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                  Your Team Name
+                </label>
+                <input className="input" value={joinTeamName}
+                  onChange={e => setJoinTeamName(e.target.value)}
+                  placeholder="Enter your team name" />
+              </div>
+
+              {!league.isPublic && (
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                    Invite Code <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <input className="input" value={joinInviteCode}
+                    onChange={e => setJoinInviteCode(e.target.value)}
+                    placeholder="Paste the invite code" />
+                </div>
+              )}
+
+              {joinError && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 'var(--radius-md)',
+                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)',
+                  color: 'var(--danger)', fontSize: '0.85rem',
+                }}>
+                  {joinError}
+                </div>
+              )}
+
+              <button onClick={handleJoinLeague} className="btn btn-primary"
+                style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
+                disabled={joinLoading || (!league.isPublic && !joinInviteCode.trim())}>
+                {joinLoading ? 'Joining...' : (
+                  <><LogIn size={16} /> Join League</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -87,6 +87,23 @@ const leagueRoutes: FastifyPluginAsync = async (fastify) => {
     return { leagues };
   });
 
+  // ─── FIND LEAGUE BY INVITE CODE ─────────────────────────────────
+  fastify.get('/api/leagues/find-by-code', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const { code } = request.query as any;
+    if (!code) return reply.status(400).send({ error: 'Invite code is required' });
+
+    const league = await fastify.prisma.league.findFirst({
+      where: { inviteCode: code.trim() },
+      include: {
+        owner: { select: { displayName: true, username: true } },
+        _count: { select: { teams: true } },
+      },
+    });
+
+    if (!league) return reply.status(404).send({ error: 'No league found with that invite code' });
+    return { league };
+  });
+
   // ─── GET LEAGUE BY ID ────────────────────────────────────────
   fastify.get('/api/leagues/:id', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const { id } = request.params as any;
