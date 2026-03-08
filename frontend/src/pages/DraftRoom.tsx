@@ -5,8 +5,72 @@ import { draftAPI, playerAPI, statsHubAPI } from '../services/api';
 import wsService from '../services/websocket';
 import {
   Clock, Search, Send, Play, Zap,
-  Check, X, MessageCircle
+  Check, X, MessageCircle, Trophy
 } from 'lucide-react';
+
+// ─── Roster Slot Helpers ────────────────────────────────────
+const SLOT_ORDER = ['C', '1B', '2B', '3B', 'SS', 'OF', 'UTIL', 'SP', 'RP', 'BN', 'IL'];
+const DEFAULT_ROSTER_CONFIG: Record<string, number> = {
+  C: 1, '1B': 1, '2B': 1, '3B': 1, SS: 1,
+  OF: 3, UTIL: 2, SP: 5, RP: 3, BN: 5, IL: 3,
+};
+
+interface SlotEntry { slot: string; player: any | null; }
+
+function getEligibleSlots(position: string): string[] {
+  const slots: string[] = [];
+  if (['C', '1B', '2B', '3B', 'SS', 'OF', 'DH'].includes(position)) {
+    if (position === 'DH') { slots.push('UTIL'); }
+    else { slots.push(position); }
+    slots.push('UTIL');
+  } else if (position === 'SP') { slots.push('SP'); }
+  else if (position === 'RP') { slots.push('RP'); }
+  slots.push('BN');
+  return [...new Set(slots)];
+}
+
+function buildRosterFromPicks(picks: any[], myTeamId: string, config: Record<string, number>): SlotEntry[] {
+  // Build empty roster
+  const roster: SlotEntry[] = [];
+  for (const key of SLOT_ORDER) {
+    const count = config[key] || 0;
+    for (let i = 0; i < count; i++) {
+      roster.push({ slot: key, player: null });
+    }
+  }
+
+  // Get my picks in order
+  const myPicks = picks
+    .filter((p: any) => p.teamId === myTeamId && p.player)
+    .sort((a: any, b: any) => a.pickNumber - b.pickNumber);
+
+  // Assign each pick to best available slot
+  for (const pick of myPicks) {
+    const eligible = getEligibleSlots(pick.player.position);
+    let assigned = false;
+
+    // Try position slots first (not BN)
+    for (const slotKey of eligible) {
+      if (slotKey === 'BN') continue;
+      const idx = roster.findIndex(s => s.slot === slotKey && s.player === null);
+      if (idx !== -1) {
+        roster[idx] = { ...roster[idx], player: pick.player };
+        assigned = true;
+        break;
+      }
+    }
+
+    // Fall back to bench
+    if (!assigned) {
+      const bnIdx = roster.findIndex(s => s.slot === 'BN' && s.player === null);
+      if (bnIdx !== -1) {
+        roster[bnIdx] = { ...roster[bnIdx], player: pick.player };
+      }
+    }
+  }
+
+  return roster;
+}
 
 export default function DraftRoom() {
   const { leagueId } = useParams<{ leagueId: string }>();
@@ -348,41 +412,75 @@ export default function DraftRoom() {
           </div>
         </div>
 
-        {/* ─── Chat Panel (right) ──────────────────────────────── */}
-        {showChat && (
-          <div style={{
-            width: 300, borderLeft: '1px solid var(--border-color)',
-            display: 'flex', flexDirection: 'column', flexShrink: 0,
-          }}>
-            <div style={{
-              padding: '10px 16px', borderBottom: '1px solid var(--border-color)',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            }}>
-              <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Draft Chat</span>
-              <button onClick={() => setShowChat(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={16} />
-              </button>
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {chatMessages.map((msg, idx) => (
-                <div key={idx} style={{ fontSize: '0.8rem' }}>
-                  <span style={{ fontWeight: 700, color: 'var(--green-400)' }}>{msg.user?.displayName || 'User'}: </span>
-                  <span style={{ color: 'var(--text-secondary)' }}>{msg.content}</span>
+        {/* ─── Right Panel: Roster + Chat ──────────────────────── */}
+        <div style={{
+          width: showChat ? 300 : 300, borderLeft: '1px solid var(--border-color)',
+          display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
+        }}>
+          {/* My Roster — slot-based */}
+          {(() => {
+            const myTeam = draft?.league?.teams?.find((t: any) => t.userId === user?.id);
+            const rConfig = draft?.league?.rosterConfig || DEFAULT_ROSTER_CONFIG;
+            const myRoster = myTeam && draft?.picks
+              ? buildRosterFromPicks(draft.picks, myTeam.id, rConfig)
+              : [];
+            const filled = myRoster.filter(s => s.player).length;
+            const total = myRoster.length;
+
+            return (
+              <div style={{ flex: showChat ? 0 : 1, overflowY: 'auto', minHeight: showChat ? 200 : undefined, maxHeight: showChat ? '50%' : undefined }}>
+                <div style={{
+                  padding: '10px 14px', borderBottom: '1px solid var(--border-color)',
+                  fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  <Trophy size={14} style={{ color: 'var(--green-400)' }} />
+                  My Roster — {filled}/{total}
                 </div>
-              ))}
-              <div ref={chatEndRef} />
+                {myRoster.length > 0 ? (
+                  <DraftRosterView roster={myRoster} />
+                ) : (
+                  <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    {myTeam ? 'Your picks will appear here' : 'Join the league to see your roster'}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Chat */}
+          {showChat && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--border-color)' }}>
+              <div style={{
+                padding: '10px 16px', borderBottom: '1px solid var(--border-color)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Draft Chat</span>
+                <button onClick={() => setShowChat(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {chatMessages.map((msg, idx) => (
+                  <div key={idx} style={{ fontSize: '0.8rem' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--green-400)' }}>{msg.user?.displayName || 'User'}: </span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{msg.content}</span>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 6 }}>
+                <input className="input" placeholder="Chat..." value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+                  style={{ flex: 1, padding: '6px 10px', fontSize: '0.8rem' }} />
+                <button onClick={sendChat} className="btn btn-primary btn-sm" style={{ padding: '6px 10px' }}>
+                  <Send size={12} />
+                </button>
+              </div>
             </div>
-            <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 6 }}>
-              <input className="input" placeholder="Chat..." value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-                style={{ flex: 1, padding: '6px 10px', fontSize: '0.8rem' }} />
-              <button onClick={sendChat} className="btn btn-primary btn-sm" style={{ padding: '6px 10px' }}>
-                <Send size={12} />
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* ─── Draft Complete Overlay ───────────────────────────── */}
@@ -403,6 +501,72 @@ export default function DraftRoom() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Draft Roster View Component ────────────────────────────
+function DraftRosterView({ roster }: { roster: SlotEntry[] }) {
+  const hitterSlots = ['C', '1B', '2B', '3B', 'SS', 'OF', 'UTIL'];
+  const pitcherSlots = ['SP', 'RP', 'P'];
+  const benchSlots = ['BN', 'IL'];
+
+  const sections = [
+    { label: 'Hitters', entries: roster.filter(s => hitterSlots.includes(s.slot)) },
+    { label: 'Pitchers', entries: roster.filter(s => pitcherSlots.includes(s.slot)) },
+    { label: 'Bench', entries: roster.filter(s => benchSlots.includes(s.slot)) },
+  ].filter(s => s.entries.length > 0);
+
+  return (
+    <div>
+      {sections.map(section => (
+        <div key={section.label}>
+          <div style={{
+            padding: '4px 14px', fontSize: '0.65rem', fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '0.05em',
+            color: 'var(--text-muted)', background: 'rgba(26,45,82,0.3)',
+            borderBottom: '1px solid rgba(26,45,82,0.3)',
+          }}>
+            {section.label}
+          </div>
+          {section.entries.map((entry, i) => (
+            <div key={`${entry.slot}-${i}`} style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '5px 14px', borderBottom: '1px solid rgba(26,45,82,0.2)',
+              background: entry.player ? 'transparent' : 'rgba(26,45,82,0.06)',
+            }}>
+              <span style={{
+                width: 28, fontWeight: 700, fontSize: '0.72rem', textAlign: 'center',
+                color: entry.player ? 'var(--green-400)' : 'var(--text-muted)',
+              }}>
+                {entry.slot}
+              </span>
+              {entry.player ? (
+                <>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: '0.75rem', fontWeight: 600,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {entry.player.fullName}
+                    </div>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                      {entry.player.team} · {entry.player.position}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--green-400)' }}>
+                    {entry.player.projectedPoints}
+                  </span>
+                </>
+              ) : (
+                <span style={{ flex: 1, color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.72rem' }}>
+                  Empty
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

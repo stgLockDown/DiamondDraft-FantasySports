@@ -4,7 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { leagueAPI, chatAPI } from '../services/api';
 import {
   Settings, Users, Trophy, MessageCircle, ArrowLeftRight,
-  BarChart3, Copy, Check, Send, LogIn, X, UserPlus
+  BarChart3, Copy, Check, Send, LogIn, X, UserPlus, Minus, Plus, Save
 } from 'lucide-react';
 
 type Tab = 'overview' | 'standings' | 'roster' | 'chat' | 'trades' | 'settings';
@@ -521,27 +521,7 @@ export default function LeagueDetail() {
         )}
 
         {activeTab === 'settings' && isCommissioner && (
-          <div className="card">
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 20 }}>League Settings</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 16 }}>
-              As commissioner, you can modify league settings here.
-            </p>
-            <div style={{
-              padding: 16, borderRadius: 'var(--radius-md)', background: 'var(--navy-700)',
-              marginBottom: 16,
-            }}>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 4 }}>Invite Code</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <code style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--green-400)' }}>
-                  {league.inviteCode}
-                </code>
-                <button onClick={copyInvite} className="btn btn-ghost btn-sm">
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                </button>
-              </div>
-            </div>
-            <button className="btn btn-danger btn-sm">Delete League</button>
-          </div>
+          <SettingsTab league={league} copyInvite={copyInvite} copied={copied} onUpdate={loadLeague} />
         )}
       </div>
 
@@ -611,6 +591,203 @@ export default function LeagueDetail() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Roster Slot Definitions ────────────────────────────────
+const SETTINGS_SLOTS = [
+  { key: 'C', label: 'Catcher', group: 'hitter', min: 0, max: 3 },
+  { key: '1B', label: 'First Base', group: 'hitter', min: 0, max: 3 },
+  { key: '2B', label: 'Second Base', group: 'hitter', min: 0, max: 3 },
+  { key: '3B', label: 'Third Base', group: 'hitter', min: 0, max: 3 },
+  { key: 'SS', label: 'Shortstop', group: 'hitter', min: 0, max: 3 },
+  { key: 'OF', label: 'Outfield', group: 'hitter', min: 0, max: 6 },
+  { key: 'UTIL', label: 'Utility', group: 'hitter', min: 0, max: 4 },
+  { key: 'SP', label: 'Starting Pitcher', group: 'pitcher', min: 0, max: 8 },
+  { key: 'RP', label: 'Relief Pitcher', group: 'pitcher', min: 0, max: 6 },
+  { key: 'P', label: 'Pitcher (any)', group: 'pitcher', min: 0, max: 4 },
+  { key: 'BN', label: 'Bench', group: 'bench', min: 0, max: 10 },
+  { key: 'IL', label: 'Injured List', group: 'bench', min: 0, max: 5 },
+];
+
+function SettingsTab({ league, copyInvite, copied, onUpdate }: {
+  league: any; copyInvite: () => void; copied: boolean; onUpdate: () => void;
+}) {
+  const [editRoster, setEditRoster] = useState<Record<string, number> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+
+  const currentConfig: Record<string, number> = editRoster || league.rosterConfig || {};
+
+  const updateSlot = (key: string, delta: number) => {
+    const slot = SETTINGS_SLOTS.find(s => s.key === key);
+    if (!slot) return;
+    const cfg = { ...(editRoster || league.rosterConfig || {}) };
+    const current = cfg[key] || 0;
+    cfg[key] = Math.max(slot.min, Math.min(slot.max, current + delta));
+    setEditRoster(cfg);
+    setSaveMsg('');
+  };
+
+  const totalSlots = Object.values(currentConfig).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+  const benchSlots = (currentConfig.BN || 0) + (currentConfig.IL || 0);
+  const activeSlots = totalSlots - benchSlots;
+
+  const saveRosterConfig = async () => {
+    if (!editRoster) return;
+    setSaving(true);
+    setSaveMsg('');
+    try {
+      await leagueAPI.updateLeague(league.id, { rosterConfig: editRoster, rosterSize: totalSlots });
+      setSaveMsg('Roster configuration saved!');
+      setEditRoster(null);
+      onUpdate();
+    } catch (e: any) {
+      setSaveMsg(e.response?.data?.error || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: 20 }}>
+      {/* Invite Code */}
+      <div className="card">
+        <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 16 }}>League Settings</h3>
+        <div style={{
+          padding: 16, borderRadius: 'var(--radius-md)', background: 'var(--navy-700)',
+          marginBottom: 16,
+        }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 4 }}>Invite Code</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <code style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--green-400)' }}>
+              {league.inviteCode}
+            </code>
+            <button onClick={copyInvite} className="btn btn-ghost btn-sm">
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+            </button>
+          </div>
+        </div>
+        <button className="btn btn-danger btn-sm">Delete League</button>
+      </div>
+
+      {/* Roster Configuration */}
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Roster Configuration</h3>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            {activeSlots} starters + {benchSlots} bench = {totalSlots} total
+          </span>
+        </div>
+
+        {/* Hitters */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{
+            fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 8,
+          }}>Hitters</div>
+          {SETTINGS_SLOTS.filter(s => s.group === 'hitter').map(slot => (
+            <SettingsSlotRow key={slot.key} slot={slot} value={currentConfig[slot.key] || 0}
+              onUpdate={(delta) => updateSlot(slot.key, delta)} />
+          ))}
+        </div>
+
+        {/* Pitchers */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{
+            fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 8,
+          }}>Pitchers</div>
+          {SETTINGS_SLOTS.filter(s => s.group === 'pitcher').map(slot => (
+            <SettingsSlotRow key={slot.key} slot={slot} value={currentConfig[slot.key] || 0}
+              onUpdate={(delta) => updateSlot(slot.key, delta)} />
+          ))}
+        </div>
+
+        {/* Bench */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{
+            fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 8,
+          }}>Bench & IL</div>
+          {SETTINGS_SLOTS.filter(s => s.group === 'bench').map(slot => (
+            <SettingsSlotRow key={slot.key} slot={slot} value={currentConfig[slot.key] || 0}
+              onUpdate={(delta) => updateSlot(slot.key, delta)} />
+          ))}
+        </div>
+
+        {/* Save */}
+        {editRoster && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={saveRosterConfig} className="btn btn-primary btn-sm" disabled={saving}>
+              <Save size={14} /> {saving ? 'Saving...' : 'Save Roster Config'}
+            </button>
+            <button onClick={() => { setEditRoster(null); setSaveMsg(''); }} className="btn btn-ghost btn-sm">
+              Cancel
+            </button>
+          </div>
+        )}
+        {saveMsg && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 'var(--radius-sm)',
+            background: saveMsg.includes('saved') ? 'rgba(29,185,84,0.1)' : 'rgba(239,68,68,0.1)',
+            color: saveMsg.includes('saved') ? 'var(--green-400)' : 'var(--danger)',
+            fontSize: '0.85rem',
+          }}>
+            {saveMsg}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SettingsSlotRow({ slot, value, onUpdate }: {
+  slot: { key: string; label: string; min: number; max: number };
+  value: number;
+  onUpdate: (delta: number) => void;
+}) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, padding: '5px 0',
+      borderBottom: '1px solid rgba(26,45,82,0.2)',
+    }}>
+      <span style={{ width: 32, fontWeight: 700, fontSize: '0.85rem', color: 'var(--green-400)' }}>
+        {slot.key}
+      </span>
+      <span style={{ flex: 1, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+        {slot.label}
+      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button type="button" onClick={() => onUpdate(-1)} disabled={value <= slot.min}
+          style={{
+            width: 24, height: 24, borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-color)', background: 'var(--navy-700)',
+            color: value <= slot.min ? 'var(--navy-600)' : 'var(--text-secondary)',
+            cursor: value <= slot.min ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+          <Minus size={11} />
+        </button>
+        <span style={{
+          width: 24, textAlign: 'center', fontWeight: 700, fontSize: '0.9rem',
+          fontVariantNumeric: 'tabular-nums',
+          color: value > 0 ? 'var(--text-primary)' : 'var(--text-muted)',
+        }}>
+          {value}
+        </span>
+        <button type="button" onClick={() => onUpdate(1)} disabled={value >= slot.max}
+          style={{
+            width: 24, height: 24, borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-color)', background: 'var(--navy-700)',
+            color: value >= slot.max ? 'var(--navy-600)' : 'var(--text-secondary)',
+            cursor: value >= slot.max ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+          <Plus size={11} />
+        </button>
+      </div>
     </div>
   );
 }

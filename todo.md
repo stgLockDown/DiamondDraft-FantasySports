@@ -1,19 +1,28 @@
-# DiamondDraft - League Joining & Roster Slots
+# DiamondDraft - Draft Position Slots & League Roster Settings
 
-## League Joining Fixes
-- [x] Rewrite Leagues.tsx with join buttons on public league cards
-- [x] Add join modal with team name + invite code for private leagues
-- [x] Fix handleJoinByCode to actually find and join leagues
-- [x] Verify Leagues.tsx compiles
-- [ ] Add backend endpoint to find league by invite code (for private league join-by-code)
-- [ ] Add join button to LeagueDetail.tsx for non-members
-- [ ] Add isMember detection in LeagueDetail.tsx
+## 1. League Creation - Roster Config Settings
+- [ ] Add roster slot configuration UI to LeagueCreate.tsx
+- [ ] Allow setting count for each position (C, 1B, 2B, 3B, SS, OF, UTIL, SP, RP, BN, IL)
+- [ ] Send rosterConfig to backend when creating league
 
-## Roster Slot Fixes
-- [ ] Update roster tab in LeagueDetail.tsx to show required position slots from rosterConfig
-- [ ] Show empty slots that need to be filled (C, 1B, 2B, 3B, SS, OF, UTIL, SP, RP, BN, IL)
-- [ ] Display which slots are filled vs empty
+## 2. League Settings - Edit Roster Config
+- [ ] Add roster configuration editor in LeagueDetail.tsx settings tab
+- [ ] Allow commissioner to adjust position counts
 
-## Build & Push
-- [ ] Full build test (frontend + backend)
+## 3. Mock Draft - Position-Based Roster
+- [ ] Rewrite "Your Roster" panel to show position slots instead of flat list
+- [ ] Show required slots: C, 1B, 2B, 3B, SS, OF(x3), UTIL, SP(x5), RP(x3), BN(x5)
+- [ ] When user drafts a player, auto-assign to correct slot
+- [ ] Show empty slots that still need to be filled
+- [ ] Update AI drafting to be slot-aware (fill required positions)
+- [ ] Update draft complete screen to show slot-based rosters
+- [ ] Calculate numRounds from total roster slots
+
+## 4. Real Draft (DraftRoom) - Position-Based Roster
+- [ ] Update DraftRoom roster panel to show position slots
+- [ ] Auto-assign drafted players to correct slots
+
+## 5. Build & Push
+- [ ] Verify TypeScript compiles
+- [ ] Full build test
 - [ ] Commit and push to GitHub
