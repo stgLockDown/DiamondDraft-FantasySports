@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
-  Diamond, Zap, Users, Trophy, BarChart3, MessageCircle,
+  Diamond, Zap, Trophy, BarChart3, MessageCircle,
   ArrowRight, Check, Star, Shield, Smartphone
 } from 'lucide-react';
 
@@ -64,9 +64,9 @@ export default function Landing() {
           <div style={{
             marginTop: 48, display: 'flex', justifyContent: 'center', gap: 32, flexWrap: 'wrap',
           }}>
-            <MiniStat icon={<Users size={16} />} label="50K+ Managers" />
-            <MiniStat icon={<Trophy size={16} />} label="10K+ Leagues" />
-            <MiniStat icon={<Zap size={16} />} label="Real-Time Scoring" />
+            <MiniStat icon={<Diamond size={16} />} label="Free to Play" />
+            <MiniStat icon={<Zap size={16} />} label="Live MLB Data" />
+            <MiniStat icon={<Trophy size={16} />} label="Real-Time Scoring" />
           </div>
         </div>
       </section>
@@ -246,7 +246,7 @@ export default function Landing() {
             color: 'var(--text-secondary)', fontSize: '1.1rem',
             maxWidth: 500, margin: '0 auto 32px',
           }}>
-            Join thousands of managers who've already made the switch.
+            Start your league today — it's free, fast, and built for real fans.
           </p>
           <Link to="/register" className="btn btn-primary btn-xl">
             Create Your Free Account <ArrowRight size={18} />

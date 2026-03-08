@@ -12,6 +12,7 @@ import LeagueCreate from './pages/LeagueCreate';
 import LeagueDetail from './pages/LeagueDetail';
 import Players from './pages/Players';
 import DraftRoom from './pages/DraftRoom';
+import MockDraft from './pages/MockDraft';
 import Pricing from './pages/Pricing';
 import StatsHub from './pages/stats/StatsHub';
 import LiveScoreboard from './pages/stats/LiveScoreboard';
@@ -97,7 +98,7 @@ function AppRoutes() {
         <Route path="/leagues/:id" element={<ProtectedRoute><LeagueDetail /></ProtectedRoute>} />
         <Route path="/leagues/:leagueId/draft" element={<ProtectedRoute><DraftRoom /></ProtectedRoute>} />
         <Route path="/players" element={<ProtectedRoute><Players /></ProtectedRoute>} />
-        <Route path="/mock-draft" element={<ProtectedRoute><DraftRoom /></ProtectedRoute>} />
+        <Route path="/mock-draft" element={<MockDraft />} />
 
         {/* Placeholder routes */}
         <Route path="/teams/:id" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
