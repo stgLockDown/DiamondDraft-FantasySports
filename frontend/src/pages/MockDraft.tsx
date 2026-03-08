@@ -90,8 +90,8 @@ function buildEmptyRoster(config: Record<string, number>): RosterSlotEntry[] {
 
 /** Check which position slot a player can fill */
 function getEligibleSlots(position: string): string[] {
-  const hitterPositions = ['C', '1B', '2B', '3B', 'SS', 'OF', 'DH'];
-  const pitcherPositions = ['SP', 'RP'];
+  // const hitterPositions = ['C', '1B', '2B', '3B', 'SS', 'OF', 'DH'];
+  // const pitcherPositions = ['SP', 'RP'];
 
   const slots: string[] = [];
 
@@ -144,14 +144,14 @@ function assignToRoster(roster: RosterSlotEntry[], player: MockPlayer): RosterSl
 }
 
 /** Count filled slots for a position */
-function countFilled(roster: RosterSlotEntry[], slot: string): number {
-  return roster.filter(s => s.slot === slot && s.player !== null).length;
-}
+// function countFilled(roster: RosterSlotEntry[], slot: string): number {
+//   return roster.filter(s => s.slot === slot && s.player !== null).length;
+// }
 
 /** Count total slots for a position */
-function countTotal(roster: RosterSlotEntry[], slot: string): number {
-  return roster.filter(s => s.slot === slot).length;
-}
+// function countTotal(roster: RosterSlotEntry[], slot: string): number {
+//   return roster.filter(s => s.slot === slot).length;
+// }
 
 /** Check if a position need is unfilled */
 function hasOpenSlot(roster: RosterSlotEntry[], slotKey: string): boolean {
