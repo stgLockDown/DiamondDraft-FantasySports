@@ -84,82 +84,31 @@ export default function MockDraft() {
   const loadPlayers = async () => {
     setLoadingPlayers(true);
     try {
-      // Fetch top hitters and pitchers from leaderboards
       const API_URL = import.meta.env.VITE_API_URL || '';
-      const [leadersRes] = await Promise.all([
-        fetch(`${API_URL}/api/stats/leaders?limit=50`).then(r => r.json()),
-      ]);
+      const res = await fetch(`${API_URL}/api/stats/players/all`);
+      const data = await res.json();
+      const allPlayers: MockPlayer[] = (data.players || []).map((p: any) => ({
+        mlbId: p.mlbId,
+        fullName: p.fullName,
+        team: p.team,
+        position: p.position,
+        headshotUrl: p.headshotUrl,
+        projectedPoints: p.projectedPoints,
+        stats: p.hitting ? {
+          avg: p.hitting.avg || null,
+          homeRuns: p.hitting.homeRuns ? parseInt(p.hitting.homeRuns) : null,
+          rbi: p.hitting.rbi ? parseInt(p.hitting.rbi) : null,
+          stolenBases: p.hitting.stolenBases ? parseInt(p.hitting.stolenBases) : null,
+        } : p.pitching ? {
+          era: p.pitching.era || null,
+          wins: p.pitching.wins ? parseInt(p.pitching.wins) : null,
+          saves: p.pitching.saves ? parseInt(p.pitching.saves) : null,
+          strikeOuts: p.pitching.strikeOuts ? parseInt(p.pitching.strikeOuts) : null,
+        } : null,
+      }));
 
-      const playerMap = new Map<number, MockPlayer>();
-
-      // Process leader categories to build player list
-      const leaders = leadersRes.leaders || {};
-      const categories = Object.keys(leaders);
-
-      for (const cat of categories) {
-        const catLeaders = leaders[cat] || [];
-        for (const leader of catLeaders) {
-          const id = leader.person?.id;
-          if (!id || playerMap.has(id)) continue;
-
-          const isPitcher = ['earnedRunAverage', 'wins', 'strikeouts', 'saves',
-            'walksAndHitsPerInningPitched', 'inningsPitched'].includes(cat);
-
-          playerMap.set(id, {
-            mlbId: id,
-            fullName: leader.person?.fullName || 'Unknown',
-            team: leader.team?.abbreviation || leader.team?.name || '???',
-            position: isPitcher ? 'SP' : guessPosition(cat),
-            headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_80,q_auto:best/v1/people/${id}/headshot/silo/current`,
-            projectedPoints: calculateProjectedPoints(leader, cat, isPitcher),
-            stats: isPitcher ? {
-              era: leader.value || null,
-              wins: null,
-              saves: null,
-              strikeOuts: null,
-            } : {
-              avg: cat === 'battingAverage' ? leader.value : null,
-              homeRuns: cat === 'homeRuns' ? parseInt(leader.value) : null,
-              rbi: cat === 'runsBattedIn' ? parseInt(leader.value) : null,
-              stolenBases: cat === 'stolenBases' ? parseInt(leader.value) : null,
-            },
-          });
-        }
-      }
-
-      // If we don't have enough players, supplement with team rosters
-      if (playerMap.size < numTeams * numRounds) {
-        try {
-          const teamsRes = await fetch(`${API_URL}/api/stats/teams`).then(r => r.json());
-          const mlbTeams = teamsRes.teams || [];
-          // Pick a few teams to get rosters from
-          const teamSample = mlbTeams.slice(0, 8);
-          for (const t of teamSample) {
-            if (playerMap.size >= numTeams * numRounds + 50) break;
-            try {
-              const rosterRes = await fetch(`${API_URL}/api/stats/teams/${t.id}`).then(r => r.json());
-              const roster = rosterRes.roster || [];
-              for (const p of roster) {
-                if (!p.mlbId || playerMap.has(p.mlbId)) continue;
-                playerMap.set(p.mlbId, {
-                  mlbId: p.mlbId,
-                  fullName: p.fullName || 'Unknown',
-                  team: rosterRes.abbreviation || t.abbreviation || '???',
-                  position: p.position || 'UTIL',
-                  headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_80,q_auto:best/v1/people/${p.mlbId}/headshot/silo/current`,
-                  projectedPoints: Math.round(50 + Math.random() * 200),
-                  stats: p.stats || null,
-                });
-              }
-            } catch { /* skip team */ }
-          }
-        } catch { /* teams endpoint failed */ }
-      }
-
-      // Sort by projected points
-      const sorted = Array.from(playerMap.values()).sort((a, b) => b.projectedPoints - a.projectedPoints);
-      setPlayers(sorted);
-      return sorted;
+      setPlayers(allPlayers);
+      return allPlayers;
     } catch (e) {
       console.error('Failed to load players:', e);
       return [];
@@ -711,12 +660,13 @@ export default function MockDraft() {
                   <th>Player</th>
                   <th>Pos</th>
                   <th>Team</th>
+                  <th>Key Stats</th>
                   <th>Proj</th>
                   <th style={{ width: 80 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {availablePlayers.slice(0, 150).map((p, i) => (
+                {availablePlayers.slice(0, 500).map((p, i) => (
                   <tr key={p.mlbId}>
                     <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{i + 1}</td>
                     <td>
@@ -732,6 +682,13 @@ export default function MockDraft() {
                       </span>
                     </td>
                     <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{p.team}</td>
+                    <td style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      {p.stats ? (
+                        p.stats.era != null
+                          ? `${p.stats.wins ?? 0}W ${p.stats.era}ERA ${p.stats.strikeOuts ?? 0}K${p.stats.saves ? ` ${p.stats.saves}SV` : ''}`
+                          : `${p.stats.avg ?? '-'}AVG ${p.stats.homeRuns ?? 0}HR ${p.stats.rbi ?? 0}RBI ${p.stats.stolenBases ?? 0}SB`
+                      ) : '—'}
+                    </td>
                     <td style={{ fontWeight: 700, color: 'var(--green-400)', fontSize: '0.82rem' }}>
                       {p.projectedPoints}
                     </td>
@@ -801,22 +758,3 @@ export default function MockDraft() {
   );
 }
 
-// ─── Helper Functions ─────────────────────────────────────────────
-
-function guessPosition(category: string): string {
-  const posMap: Record<string, string> = {
-    homeRuns: '1B', battingAverage: 'SS', runsBattedIn: 'OF',
-    runs: '2B', stolenBases: 'SS', onBasePlusSlugging: 'OF',
-    hits: 'OF', doubles: '3B', onBasePercentage: 'OF',
-    sluggingPercentage: '1B', totalBases: 'OF',
-  };
-  return posMap[category] || 'OF';
-}
-
-function calculateProjectedPoints(leader: any, _category: string, isPitcher: boolean): number {
-  const rank = leader.rank || 10;
-  const base = isPitcher ? 280 : 320;
-  // Higher ranked = more points, with some variance
-  const points = base - (rank * 8) + Math.round(Math.random() * 30);
-  return Math.max(50, points);
-}

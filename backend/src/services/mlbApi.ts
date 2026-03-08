@@ -591,6 +591,130 @@ export async function getHotColdPlayers(season: number = new Date().getFullYear(
 
 // ─── MULTIPLE STAT LEADER CATEGORIES ──────────────────────────
 
+// ─── ALL PLAYERS WITH STATS (for drafts) ──────────────────────────
+
+// In-memory cache to avoid hammering MLB API
+let allPlayersCache: { data: any[]; timestamp: number } | null = null;
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+export async function getAllPlayersWithStats(season: number = new Date().getFullYear()): Promise<any[]> {
+  // Return cached if fresh
+  if (allPlayersCache && Date.now() - allPlayersCache.timestamp < CACHE_TTL) {
+    return allPlayersCache.data;
+  }
+
+  // Fetch all MLB players + season stats in parallel
+  const [playersData, hittingData, pitchingData] = await Promise.all([
+    fetchJSON(`${MLB_API_BASE}/sports/1/players?season=${season}`),
+    fetchJSON(`${MLB_API_BASE}/stats?stats=season&group=hitting&season=${season}&sportIds=1&limit=1000&offset=0&sortStat=plateAppearances&order=desc`).catch(() => null),
+    fetchJSON(`${MLB_API_BASE}/stats?stats=season&group=pitching&season=${season}&sportIds=1&limit=1000&offset=0&sortStat=inningsPitched&order=desc`).catch(() => null),
+  ]);
+
+  const people = playersData.people || [];
+
+  // Build stat lookup maps by player ID
+  const hittingMap = new Map<number, any>();
+  const hittingSplits = hittingData?.stats?.[0]?.splits || [];
+  for (const s of hittingSplits) {
+    if (s.player?.id) hittingMap.set(s.player.id, s.stat);
+  }
+
+  const pitchingMap = new Map<number, any>();
+  const pitchingSplits = pitchingData?.stats?.[0]?.splits || [];
+  for (const s of pitchingSplits) {
+    if (s.player?.id) pitchingMap.set(s.player.id, s.stat);
+  }
+
+  // Merge players with their stats
+  const result = people.map((p: any) => {
+    const posAbbr = p.primaryPosition?.abbreviation || 'UTIL';
+    const isPitcher = ['P', 'SP', 'RP', 'TWP'].includes(posAbbr) || p.primaryPosition?.code === '1';
+    const hitting = hittingMap.get(p.id);
+    const pitching = pitchingMap.get(p.id);
+
+    // Calculate projected fantasy points based on available stats
+    let projectedPoints = 0;
+    if (hitting) {
+      projectedPoints += (parseInt(hitting.homeRuns) || 0) * 4;
+      projectedPoints += (parseInt(hitting.rbi) || 0) * 1;
+      projectedPoints += (parseInt(hitting.runs) || 0) * 1;
+      projectedPoints += (parseInt(hitting.stolenBases) || 0) * 2;
+      projectedPoints += (parseInt(hitting.hits) || 0) * 0.5;
+      projectedPoints += (parseInt(hitting.baseOnBalls) || 0) * 0.5;
+      projectedPoints += (parseInt(hitting.doubles) || 0) * 1;
+      projectedPoints += (parseInt(hitting.triples) || 0) * 2;
+    }
+    if (pitching) {
+      projectedPoints += (parseInt(pitching.wins) || 0) * 5;
+      projectedPoints += (parseInt(pitching.strikeOuts) || 0) * 1;
+      projectedPoints += (parseInt(pitching.saves) || 0) * 5;
+      projectedPoints += (parseInt(pitching.holds) || 0) * 2;
+      projectedPoints += (parseFloat(pitching.inningsPitched) || 0) * 1;
+      // Subtract for earned runs
+      projectedPoints -= (parseInt(pitching.earnedRuns) || 0) * 1;
+    }
+    // Minimum baseline for active players
+    if (projectedPoints === 0 && p.active) projectedPoints = 1;
+
+    // Determine display position
+    let position = posAbbr;
+    if (position === 'P' || position === 'TWP') {
+      if (pitching) {
+        const gs = parseInt(pitching.gamesStarted) || 0;
+        const gp = parseInt(pitching.gamesPlayed) || 0;
+        position = gs > gp / 2 ? 'SP' : 'RP';
+      } else {
+        position = 'SP';
+      }
+    } else if (['LF', 'CF', 'RF'].includes(position)) {
+      position = 'OF';
+    }
+
+    return {
+      mlbId: p.id,
+      fullName: p.fullName,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      team: p.currentTeam?.abbreviation || MLB_TEAM_MAP[p.currentTeam?.id] || '???',
+      teamId: p.currentTeam?.id,
+      position,
+      primaryPosition: posAbbr,
+      jerseyNumber: p.primaryNumber,
+      batSide: p.batSide?.code,
+      throwHand: p.pitchHand?.code,
+      age: p.currentAge,
+      active: p.active,
+      headshotUrl: `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_80,q_auto:best/v1/people/${p.id}/headshot/silo/current`,
+      projectedPoints: Math.round(projectedPoints * 10) / 10,
+      hitting: hitting ? {
+        gamesPlayed: hitting.gamesPlayed, avg: hitting.avg, obp: hitting.obp,
+        slg: hitting.slg, ops: hitting.ops, homeRuns: hitting.homeRuns,
+        rbi: hitting.rbi, runs: hitting.runs, hits: hitting.hits,
+        stolenBases: hitting.stolenBases, baseOnBalls: hitting.baseOnBalls,
+        strikeOuts: hitting.strikeOuts, doubles: hitting.doubles,
+        triples: hitting.triples, plateAppearances: hitting.plateAppearances,
+        atBats: hitting.atBats,
+      } : null,
+      pitching: pitching ? {
+        gamesPlayed: pitching.gamesPlayed, gamesStarted: pitching.gamesStarted,
+        era: pitching.era, whip: pitching.whip, wins: pitching.wins,
+        losses: pitching.losses, saves: pitching.saves, holds: pitching.holds,
+        strikeOuts: pitching.strikeOuts, inningsPitched: pitching.inningsPitched,
+        earnedRuns: pitching.earnedRuns, baseOnBalls: pitching.baseOnBalls,
+        hits: pitching.hits, homeRuns: pitching.homeRuns,
+      } : null,
+    };
+  });
+
+  // Sort by projected points descending
+  result.sort((a: any, b: any) => b.projectedPoints - a.projectedPoints);
+
+  // Cache the result
+  allPlayersCache = { data: result, timestamp: Date.now() };
+
+  return result;
+}
+
 export async function getMultipleLeaders(
   categories: string[],
   season: number = new Date().getFullYear(),

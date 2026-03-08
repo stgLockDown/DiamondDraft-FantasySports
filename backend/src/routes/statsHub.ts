@@ -18,6 +18,7 @@ import {
   getMultipleLeaders,
   getHotColdPlayers,
   getStatLeaders,
+  getAllPlayersWithStats,
   MLB_TEAM_MAP_REVERSE,
 } from '../services/mlbApi';
 
@@ -432,6 +433,28 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
     }
 
     return { startDate: start, endDate: end, dates };
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // ALL PLAYERS (for drafts — full MLB roster with stats)
+  // ═══════════════════════════════════════════════════════════
+
+  // GET /api/stats/players/all — All MLB players with season stats (cached)
+  fastify.get('/api/stats/players/all', async (request) => {
+    const { season, activeOnly } = request.query as any;
+    const yr = season ? parseInt(season) : new Date().getFullYear();
+    let players = await getAllPlayersWithStats(yr);
+
+    // Filter to only players with stats or active by default
+    if (activeOnly !== 'false') {
+      players = players.filter((p: any) => p.active && (p.hitting || p.pitching || p.projectedPoints > 0));
+    }
+
+    return {
+      season: yr,
+      count: players.length,
+      players,
+    };
   });
 
   // ═══════════════════════════════════════════════════════════

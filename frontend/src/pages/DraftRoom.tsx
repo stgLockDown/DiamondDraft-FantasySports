@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { draftAPI, playerAPI } from '../services/api';
+import { draftAPI, playerAPI, statsHubAPI } from '../services/api';
 import wsService from '../services/websocket';
 import {
   Clock, Search, Send, Play, Zap,
@@ -61,7 +61,17 @@ export default function DraftRoom() {
 
   const loadPlayers = async () => {
     try {
-      const { data } = await playerAPI.search({ limit: 200, sort: 'projectedPoints', order: 'desc' });
+      // Try loading all MLB players from Stats Hub API first
+      const { data } = await statsHubAPI.allPlayers();
+      if (data.players?.length > 0) {
+        setPlayers(data.players);
+        return;
+      }
+    } catch { /* Stats Hub not available, fall back to DB */ }
+
+    try {
+      // Fallback: load from DB with higher limit
+      const { data } = await playerAPI.search({ limit: 1500, sort: 'projectedPoints', order: 'desc' });
       setPlayers(data.players || []);
     } catch (e) { console.error(e); }
   };
@@ -128,10 +138,11 @@ export default function DraftRoom() {
     setChatInput('');
   };
 
-  // Filter players
+  // Filter players — handle both DB (id) and Stats Hub (mlbId) formats
   const draftedPlayerIds = new Set(draft?.picks?.filter((p: any) => p.playerId).map((p: any) => p.playerId) || []);
-  const availablePlayers = players.filter((p) => {
-    if (draftedPlayerIds.has(p.id)) return false;
+  const availablePlayers = players.filter((p: any) => {
+    const pid = p.id || p.mlbId;
+    if (draftedPlayerIds.has(pid) || draftedPlayerIds.has(String(pid))) return false;
     if (search && !p.fullName.toLowerCase().includes(search.toLowerCase())) return false;
     if (posFilter !== 'All' && p.position !== posFilter) return false;
     return true;
@@ -293,17 +304,17 @@ export default function DraftRoom() {
                 </tr>
               </thead>
               <tbody>
-                {availablePlayers.slice(0, 100).map((p) => (
-                  <tr key={p.id} style={{
-                    background: pickQueue.includes(p.id) ? 'rgba(59,130,246,0.1)' : undefined,
+                {availablePlayers.slice(0, 500).map((p: any) => (
+                  <tr key={p.id || p.mlbId} style={{
+                    background: pickQueue.includes(p.id || p.mlbId) ? 'rgba(59,130,246,0.1)' : undefined,
                   }}>
                     <td>
-                      <button onClick={() => toggleQueue(p.id)} style={{
+                      <button onClick={() => toggleQueue(p.id || p.mlbId)} style={{
                         width: 22, height: 22, borderRadius: 4, border: '1px solid var(--border-light)',
-                        background: pickQueue.includes(p.id) ? 'var(--info)' : 'transparent',
+                        background: pickQueue.includes(p.id || p.mlbId) ? 'var(--info)' : 'transparent',
                         cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
-                        {pickQueue.includes(p.id) && <Check size={12} color="white" />}
+                        {pickQueue.includes(p.id || p.mlbId) && <Check size={12} color="white" />}
                       </button>
                     </td>
                     <td>
@@ -318,13 +329,13 @@ export default function DraftRoom() {
                     <td style={{ fontWeight: 700, color: 'var(--green-400)', fontSize: '0.85rem' }}>{p.projectedPoints}</td>
                     <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                       {p.position === 'SP' || p.position === 'RP'
-                        ? `${p.wins_stat}W ${p.era?.toFixed(2)}ERA ${p.strikeouts}K`
-                        : `${p.homeRuns}HR ${p.rbi}RBI ${p.stolenBases}SB .${(p.battingAvg * 1000).toFixed(0)}`
+                        ? `${p.pitching?.wins ?? p.wins_stat ?? 0}W ${p.pitching?.era ?? (p.era != null ? p.era.toFixed(2) : '-')}ERA ${p.pitching?.strikeOuts ?? p.strikeouts ?? 0}K`
+                        : `${p.hitting?.homeRuns ?? p.homeRuns ?? 0}HR ${p.hitting?.rbi ?? p.rbi ?? 0}RBI ${p.hitting?.stolenBases ?? p.stolenBases ?? 0}SB ${p.hitting?.avg ?? (p.battingAvg != null ? '.' + (p.battingAvg * 1000).toFixed(0) : '-')}`
                       }
                     </td>
                     <td>
                       {isMyPick && draft?.status === 'IN_PROGRESS' && (
-                        <button onClick={() => handleMakePick(p.id)} className="btn btn-primary btn-sm"
+                        <button onClick={() => handleMakePick(p.id || p.mlbId)} className="btn btn-primary btn-sm"
                           style={{ padding: '4px 12px', fontSize: '0.75rem' }}>
                           Draft
                         </button>

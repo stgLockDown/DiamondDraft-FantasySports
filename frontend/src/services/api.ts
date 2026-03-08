@@ -177,6 +177,10 @@ export const statsHubAPI = {
   schedule: (startDate: string, endDate?: string, teamId?: string) =>
     api.get('/api/stats/schedule', { params: { startDate, endDate, teamId } }),
 
+  // All players (for drafts)
+  allPlayers: (season?: number, activeOnly?: boolean) =>
+    api.get('/api/stats/players/all', { params: { season, activeOnly } }),
+
   // Search
   search: (q: string, position?: string, team?: string) =>
     api.get('/api/stats/search', { params: { q, position, team } }),
