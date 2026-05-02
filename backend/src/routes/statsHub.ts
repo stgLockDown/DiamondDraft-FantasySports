@@ -321,7 +321,7 @@ export default async function statsHubRoutes(fastify: FastifyInstance) {
           },
         });
         for (const p of found) {
-          dbPlayers[p.mlbId] = p;
+          if (p.mlbId != null) dbPlayers[p.mlbId] = p;
         }
       }
     } catch (_) { /* DB not available */ }

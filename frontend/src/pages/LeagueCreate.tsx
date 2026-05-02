@@ -3,6 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { leagueAPI } from '../services/api';
 import { ArrowLeft, Trophy, Minus, Plus } from 'lucide-react';
 
+const SPORTS = [
+  { value: 'MLB', label: '⚾ MLB (Baseball)', status: 'stable' },
+  { value: 'NFL', label: '🏈 NFL (Football)', status: 'preview' },
+  { value: 'NBA', label: '🏀 NBA (Basketball)', status: 'preview' },
+  { value: 'NHL', label: '🏒 NHL (Hockey)', status: 'preview' },
+] as const;
+
 const FORMATS = [
   { value: 'HEAD_TO_HEAD_POINTS', label: 'Head-to-Head Points', desc: 'Weekly matchups, total points wins' },
   { value: 'HEAD_TO_HEAD_CATEGORIES', label: 'Head-to-Head Categories', desc: 'Weekly matchups, win each stat category' },
@@ -48,11 +55,16 @@ export default function LeagueCreate() {
   const [rosterConfig, setRosterConfig] = useState<Record<string, number>>({ ...DEFAULT_ROSTER });
   const [form, setForm] = useState({
     name: '', description: '', teamName: '',
+    sport: 'MLB' as 'MLB' | 'NFL' | 'NBA' | 'NHL',
     format: 'HEAD_TO_HEAD_POINTS', maxTeams: 12,
     draftType: 'SNAKE', isPublic: false,
     seasonYear: new Date().getFullYear(),
     leagueType: 'REDRAFT',
   });
+
+  // Detailed roster slot editor is MLB-only for now. For NFL/NBA/NHL the
+  // backend will apply the sport-specific default roster automatically.
+  const isMLB = form.sport === 'MLB';
 
   const update = (field: string, value: any) => setForm({ ...form, [field]: value });
 
@@ -70,15 +82,18 @@ export default function LeagueCreate() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) { setError('League name is required'); return; }
-    if (totalSlots < 10) { setError('Roster must have at least 10 total slots'); return; }
+    if (isMLB && totalSlots < 10) { setError('Roster must have at least 10 total slots'); return; }
     setLoading(true);
     setError('');
     try {
-      const { data } = await leagueAPI.createLeague({
-        ...form,
-        rosterConfig,
-        rosterSize: totalSlots,
-      });
+      // Only send rosterConfig when the user actually customized it (MLB).
+      // For NFL/NBA/NHL the backend fills in sport-appropriate defaults.
+      const payload: any = { ...form };
+      if (isMLB) {
+        payload.rosterConfig = rosterConfig;
+        payload.rosterSize = totalSlots;
+      }
+      const { data } = await leagueAPI.createLeague(payload);
       navigate(`/leagues/${data.league.id}`);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create league');
@@ -113,6 +128,36 @@ export default function LeagueCreate() {
               color: '#f87171', fontSize: '0.875rem',
             }}>{error}</div>
           )}
+
+          <div className="form-group">
+            <label className="label">Sport</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+              {SPORTS.map((sp) => {
+                const selected = form.sport === sp.value;
+                return (
+                  <button
+                    type="button"
+                    key={sp.value}
+                    onClick={() => update('sport', sp.value)}
+                    className="btn"
+                    style={{
+                      padding: '10px 12px',
+                      textAlign: 'left',
+                      border: selected ? '2px solid var(--green-500)' : '1px solid var(--border-color)',
+                      background: selected ? 'var(--accent-muted)' : 'var(--bg-card)',
+                      borderRadius: 'var(--radius-md)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontWeight: 700 }}>{sp.label}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      {sp.status === 'stable' ? 'Fully supported' : 'Preview — league creation only, data sync coming soon'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="form-group">
             <label className="label">League Name *</label>
@@ -167,7 +212,22 @@ export default function LeagueCreate() {
             </div>
           </div>
 
-          {/* ─── Roster Configuration ─────────────────────────── */}
+          {/* Roster Configuration (MLB only for now) */}
+          {!isMLB && (
+            <div style={{
+              marginTop: 8, marginBottom: 20,
+              padding: '12px 16px', borderRadius: 'var(--radius-md)',
+              background: 'var(--navy-700)', border: '1px dashed var(--border-color)',
+              color: 'var(--text-muted)', fontSize: '0.85rem',
+            }}>
+              <strong style={{ color: 'var(--text-primary)' }}>
+                {form.sport} roster:
+              </strong>{' '}
+              standard sport-specific roster will be applied automatically.
+              You'll be able to customize slots after creation.
+            </div>
+          )}
+          {isMLB && (
           <div style={{ marginTop: 8, marginBottom: 20 }}>
             <button type="button" onClick={() => setShowRosterConfig(!showRosterConfig)}
               style={{
@@ -261,6 +321,7 @@ export default function LeagueCreate() {
               </div>
             )}
           </div>
+          )}
 
           <div className="form-group">
             <label style={{

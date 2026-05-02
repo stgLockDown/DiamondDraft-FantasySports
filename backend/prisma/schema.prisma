@@ -52,6 +52,16 @@ enum UserTier {
   COMMISSIONER_PLUS
 }
 
+// ─── SPORTS ──────────────────────────────────────────────────────────
+// Multi-sport support. MLB is the default so every existing row
+// (leagues, players) gets migrated cleanly without data loss.
+enum Sport {
+  MLB
+  NFL
+  NBA
+  NHL
+}
+
 // ─── LEAGUES ────────────────────────────────────────────────────
 
 model League {
@@ -59,7 +69,11 @@ model League {
   name            String
   description     String?
   logoUrl         String?
-  
+
+  // Multi-sport: which league this is for. Defaults to MLB so every
+  // existing league keeps working without any data migration.
+  sport           Sport        @default(MLB)
+
   // Settings
   format          LeagueFormat @default(HEAD_TO_HEAD_POINTS)
   scoringType     ScoringType  @default(POINTS)
@@ -221,18 +235,27 @@ model Team {
 
 model Player {
   id              String   @id @default(uuid())
-  mlbId           Int      @unique
+
+  // Multi-sport identifier. `sport` says which league this player plays
+  // in; `externalId` is the provider-specific id (MLB.com, ESPN, etc.).
+  // For MLB the legacy `mlbId` column is still populated for backward
+  // compatibility with existing consumers — new NFL/NBA/NHL rows leave
+  // it null.
+  sport           Sport    @default(MLB)
+  externalId      String?  // stringified (NFL/NBA/NHL ids are strings or larger ints)
+  mlbId           Int?     @unique // legacy — still unique-when-present
+
   firstName       String
   lastName        String
   fullName        String
-  
+
   // Bio
-  team            String   // MLB team abbreviation
+  team            String   // Team abbreviation
   teamFullName    String?
   position        String   // Primary position
   eligiblePositions String[] // All eligible positions
-  bats            String?  // L, R, S
-  throws          String?  // L, R
+  bats            String?  // L, R, S (baseball only)
+  throws          String?  // L, R (baseball only)
   age             Int?
   
   // Status
@@ -288,6 +311,8 @@ model Player {
   @@index([position])
   @@index([fullName])
   @@index([mlbId])
+  @@index([sport])
+  @@unique([sport, externalId], name: "sport_externalId_unique")
 }
 
 enum PlayerStatus {

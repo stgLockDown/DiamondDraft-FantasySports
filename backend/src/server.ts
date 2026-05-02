@@ -16,6 +16,7 @@ import draftRoutes from './routes/draft';
 import chatRoutes from './routes/chat';
 import syncRoutes from './routes/sync';
 import statsHubRoutes from './routes/statsHub';
+import multiSportRoutes from './routes/multiSport';
 import { setupWebSocket } from './websocket/handler';
 import { startScheduler, stopScheduler } from './services/scheduler';
 import { fullSync } from './services/dataSync';
@@ -51,6 +52,7 @@ async function buildServer() {
   await fastify.register(chatRoutes);
   await fastify.register(syncRoutes);
   await fastify.register(statsHubRoutes);
+  await fastify.register(multiSportRoutes);
 
   // ─── WEBSOCKET ──────────────────────────────────────────────
   setupWebSocket(fastify);
