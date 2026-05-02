@@ -25,6 +25,7 @@ import PlayerSearch from './pages/stats/PlayerSearch';
 import PlayerProfile from './pages/stats/PlayerProfile';
 import PlayerCompare from './pages/stats/PlayerCompare';
 import GameDetail from './pages/stats/GameDetail';
+import SsoHandoff from './pages/SsoHandoff';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -73,6 +74,7 @@ function AppRoutes() {
         <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
         <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
         <Route path="/pricing" element={<Pricing />} />
+        <Route path="/sso" element={<SsoHandoff />} />
 
         {/* Stats Hub - Public routes */}
         <Route path="/stats" element={<StatsHub />}>

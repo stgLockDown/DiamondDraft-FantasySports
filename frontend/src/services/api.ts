@@ -85,6 +85,15 @@ export const playerAPI = {
   getStats: (id: string, params?: any) => api.get(`/api/players/${id}/stats`, { params }),
   getNews: (id: string) => api.get(`/api/players/${id}/news`),
   getTopPerformers: (params?: any) => api.get('/api/players/top/performers', { params }),
+  // ValorOdds-enriched feeds (by MLB id, the ID the Stats Hub uses)
+  getNewsByMlbId: (mlbId: number) => api.get(`/api/players/mlb/${mlbId}/news`),
+  getInjuryByMlbId: (mlbId: number) => api.get(`/api/players/mlb/${mlbId}/injury-status`),
+};
+
+// ─── SSO (ValorOdds handoff) ──────────────────────────────────────────
+export const ssoAPI = {
+  valorOdds: (token: string) => api.post('/api/auth/sso/valorodds', { token }),
+  entitlement: () => api.get('/api/me/entitlement'),
 };
 
 // ─── TRADES ─────────────────────────────────────────────────

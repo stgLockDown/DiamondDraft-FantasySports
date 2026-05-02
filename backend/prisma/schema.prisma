@@ -21,7 +21,12 @@ model User {
   // OAuth
   googleId      String?  @unique
   appleId       String?  @unique
-  
+
+  // ValorOdds SSO linkage (items 1 & 4 on cross-platform list)
+  valorOddsUserId String? @unique
+  valorOddsTier   String?  // raw tier string from ValorOdds: free | beta | premium | vip
+  valorOddsLinkedAt DateTime?
+
   // Stripe
   stripeCustomerId    String?
   stripeSubscriptionId String?
