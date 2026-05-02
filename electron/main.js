@@ -4,8 +4,14 @@ const { autoUpdater } = require('electron-updater');
 
 // ─── CONFIGURATION ────────────────────────────────────────────
 
-const APP_URL = process.env.DIAMONDDRAFT_URL || 'https://diamonddraft-production.up.railway.app';
-const DEV_URL = 'http://localhost:5173';
+// Desktop shell loads the web app. The production URL MUST come from
+// either a baked-in build-time constant or the DIAMONDDRAFT_URL env var —
+// we no longer hardcode a Railway subdomain.
+const APP_URL =
+  process.env.DIAMONDDRAFT_URL ||
+  (typeof global.__DIAMONDDRAFT_APP_URL__ !== 'undefined' ? global.__DIAMONDDRAFT_APP_URL__ : null) ||
+  'https://diamonddraft.app';
+const DEV_URL = process.env.DIAMONDDRAFT_DEV_URL || 'http://localhost:5173';
 const isDev = process.env.NODE_ENV === 'development';
 
 let mainWindow = null;

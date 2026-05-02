@@ -126,12 +126,93 @@ const playerRoutes: FastifyPluginAsync = async (fastify) => {
   // ─── GET PLAYER NEWS ──────────────────────────────────────────
   fastify.get('/api/players/:id/news', async (request) => {
     const { id } = request.params as any;
-    const news = await fastify.prisma.playerNews.findMany({
+
+    const local = await fastify.prisma.playerNews.findMany({
       where: { playerId: id },
       orderBy: { publishedAt: 'desc' },
       take: 20,
     });
-    return { news };
+
+    // Try to enrich with ValorOdds feed (injury reports, analyst notes).
+    // Never fail the request if the upstream is down or unconfigured.
+    let valorOdds: any[] = [];
+    try {
+      const { fetchValorOddsPlayerNews } = await import('../services/valorOddsNews');
+      const player = await fastify.prisma.player.findUnique({
+        where: { id },
+        select: { mlbId: true, fullName: true, team: true, position: true },
+      });
+      if (player) {
+        valorOdds = await fetchValorOddsPlayerNews(player);
+      }
+    } catch {
+      valorOdds = [];
+    }
+
+    return { news: local, valorOdds };
+  });
+
+  // BY-MLB-ID lookups (used by the Stats Hub PlayerProfile page) ------
+  fastify.get('/api/players/mlb/:mlbId/news', async (request) => {
+    const { mlbId } = request.params as any;
+    try {
+      const player = await fastify.prisma.player.findFirst({
+        where: { mlbId: Number(mlbId) },
+        select: { id: true, mlbId: true, fullName: true, team: true, position: true },
+      });
+      const local = player
+        ? await fastify.prisma.playerNews.findMany({
+            where: { playerId: player.id },
+            orderBy: { publishedAt: 'desc' },
+            take: 20,
+          })
+        : [];
+      let valorOdds: any[] = [];
+      try {
+        const { fetchValorOddsPlayerNews } = await import('../services/valorOddsNews');
+        valorOdds = await fetchValorOddsPlayerNews(
+          player || { mlbId: Number(mlbId), fullName: '', team: null, position: null },
+        );
+      } catch {
+        valorOdds = [];
+      }
+      return { news: local, valorOdds };
+    } catch {
+      return { news: [], valorOdds: [] };
+    }
+  });
+
+  fastify.get('/api/players/mlb/:mlbId/injury-status', async (request) => {
+    const { mlbId } = request.params as any;
+    try {
+      const player = await fastify.prisma.player.findFirst({
+        where: { mlbId: Number(mlbId) },
+        select: { mlbId: true, fullName: true, team: true, position: true },
+      });
+      const { fetchValorOddsInjuryStatus } = await import('../services/valorOddsNews');
+      const status = await fetchValorOddsInjuryStatus(
+        player || { mlbId: Number(mlbId), fullName: '', team: null, position: null },
+      );
+      return status ? { ...status, source: 'valorodds' } : { status: null, source: null };
+    } catch {
+      return { status: null, source: null };
+    }
+  });
+
+  fastify.get('/api/players/:id/injury-status', async (request) => {
+    const { id } = request.params as any;
+    try {
+      const player = await fastify.prisma.player.findUnique({
+        where: { id },
+        select: { mlbId: true, fullName: true, team: true, position: true },
+      });
+      if (!player) return { status: null, source: null };
+      const { fetchValorOddsInjuryStatus } = await import('../services/valorOddsNews');
+      const status = await fetchValorOddsInjuryStatus(player);
+      return status ? { ...status, source: 'valorodds' } : { status: null, source: null };
+    } catch {
+      return { status: null, source: null };
+    }
   });
 
   // ─── TOP PERFORMERS ──────────────────────────────────────────

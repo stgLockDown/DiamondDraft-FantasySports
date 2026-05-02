@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, TrendingUp, BarChart3, Calendar } from 'lucide-react';
-import { statsHubAPI } from '../../services/api';
+import { ArrowLeft, TrendingUp, BarChart3, Calendar, AlertTriangle, Newspaper } from 'lucide-react';
+import { statsHubAPI, playerAPI } from '../../services/api';
 
 type Tab = 'overview' | 'splits' | 'gamelog';
 
@@ -27,6 +27,28 @@ export default function PlayerProfile() {
     queryFn: () => statsHubAPI.playerGamelog(Number(mlbId)),
     enabled: !!mlbId && tab === 'gamelog',
   });
+
+  // ValorOdds injury + news feed (best-effort; empty if unconfigured)
+  const { data: injuryData } = useQuery({
+    queryKey: ['player-injury', mlbId],
+    queryFn: () => playerAPI.getInjuryByMlbId(Number(mlbId)).then((r) => r.data),
+    enabled: !!mlbId,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const { data: newsData } = useQuery({
+    queryKey: ['player-news', mlbId],
+    queryFn: () => playerAPI.getNewsByMlbId(Number(mlbId)).then((r) => r.data),
+    enabled: !!mlbId,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const injuryStatus = injuryData?.status ? injuryData : null;
+  const valorNews: any[] = newsData?.valorOdds || [];
+  const localNews: any[] = newsData?.news || [];
+  const hasNews = valorNews.length > 0 || localNews.length > 0 || !!injuryStatus;
 
   if (isLoading) return (
     <div style={{ padding: '60px 0', textAlign: 'center' }}>
@@ -135,6 +157,77 @@ export default function PlayerProfile() {
             </div>
           </div>
         </div>
+
+        {/* ValorOdds Injury + News Card (cross-platform feed) */}
+        {hasNews && (
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderLeft: injuryStatus ? '4px solid var(--danger, #ef4444)' : '4px solid var(--green-500)',
+            borderRadius: 'var(--radius-lg)',
+            padding: 16,
+            marginBottom: 24,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              {injuryStatus
+                ? <AlertTriangle size={18} color="var(--danger, #ef4444)" />
+                : <Newspaper size={18} color="var(--green-500)" />}
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>
+                {injuryStatus ? `Injury: ${injuryStatus.status}` : 'Latest News'}
+              </h3>
+              <span style={{
+                marginLeft: 'auto',
+                fontSize: '0.7rem',
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}>
+                Powered by ValorOdds
+              </span>
+            </div>
+
+            {injuryStatus && (
+              <div style={{ marginBottom: 12, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                <p style={{ margin: '4px 0' }}>{injuryStatus.description}</p>
+                {injuryStatus.expectedReturn && (
+                  <p style={{ margin: '4px 0' }}>
+                    <strong>Expected return:</strong> {injuryStatus.expectedReturn}
+                  </p>
+                )}
+                <p style={{ margin: '4px 0', fontSize: '0.72rem' }}>
+                  Reported {new Date(injuryStatus.reportedAt).toLocaleDateString()}
+                </p>
+              </div>
+            )}
+
+            {valorNews.slice(0, 3).map((n, i) => (
+              <div key={`vo-${i}`} style={{
+                padding: '10px 0',
+                borderTop: i === 0 && !injuryStatus ? 'none' : '1px solid var(--border-color)',
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{n.title}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                  {n.body}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  {n.source} · {new Date(n.publishedAt).toLocaleString()}
+                </div>
+              </div>
+            ))}
+
+            {!valorNews.length && localNews.slice(0, 3).map((n: any, i: number) => (
+              <div key={`loc-${i}`} style={{
+                padding: '10px 0',
+                borderTop: i === 0 && !injuryStatus ? 'none' : '1px solid var(--border-color)',
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{n.title || 'Update'}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                  {n.body}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Tabs */}
         <div style={{
