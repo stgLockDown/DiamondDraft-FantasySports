@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "DiamondDraft",
+    "slug": "diamonddraft",
+    "scheme": "diamonddraft",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A1628"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.diamonddraft.app",
+      "associatedDomains": ["applinks:diamonddraft.app"],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.diamonddraft.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A1628"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "diamonddraft.app", "pathPrefix": "/" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1DB954"
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://diamonddraft.app",
+      "wsUrl": "wss://diamonddraft.app",
+      "eas": { "projectId": "TO_BE_SET_BY_EAS_INIT" }
+    },
+    "owner": "stgLockDown"
+  }
+}

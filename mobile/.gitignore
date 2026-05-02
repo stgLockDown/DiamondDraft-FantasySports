@@ -1,0 +1,22 @@
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Builds
+*.apk
+*.aab
+*.ipa
