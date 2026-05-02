@@ -1,5 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import { DEFAULT_ROSTER_CONFIG, DEFAULT_SCORING_CONFIG } from '../utils/scoring';
+import { defaultRosterConfig, defaultScoringConfig, supportedSports } from '../utils/sportConfig';
+
+const SUPPORTED_SPORTS = new Set(supportedSports());
 
 const leagueRoutes: FastifyPluginAsync = async (fastify) => {
   // ─── CREATE LEAGUE ────────────────────────────────────────────
@@ -13,10 +16,20 @@ const leagueRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(403).send({ error: 'Free tier limited to 2 leagues. Upgrade to Pro for unlimited.' });
     }
 
+    // Multi-sport: derive sport-appropriate defaults when the client
+    // doesn't supply a custom roster / scoring config. MLB keeps its
+    // historical defaults exactly to avoid disrupting existing tests.
+    const sport = SUPPORTED_SPORTS.has(String(body.sport || 'MLB').toUpperCase() as any)
+      ? (String(body.sport || 'MLB').toUpperCase() as any)
+      : 'MLB';
+    const rosterDefault = sport === 'MLB' ? DEFAULT_ROSTER_CONFIG : defaultRosterConfig(sport);
+    const scoringDefault = sport === 'MLB' ? DEFAULT_SCORING_CONFIG : defaultScoringConfig(sport);
+
     const league = await fastify.prisma.league.create({
       data: {
         name: body.name,
         description: body.description || null,
+        sport,
         format: body.format || 'HEAD_TO_HEAD_POINTS',
         scoringType: body.scoringType || 'POINTS',
         maxTeams: body.maxTeams || 12,
@@ -26,8 +39,8 @@ const leagueRoutes: FastifyPluginAsync = async (fastify) => {
         draftType: body.draftType || 'SNAKE',
         draftDate: body.draftDate ? new Date(body.draftDate) : null,
         pickTimerSeconds: body.pickTimerSeconds || 90,
-        rosterConfig: body.rosterConfig || DEFAULT_ROSTER_CONFIG,
-        scoringConfig: body.scoringConfig || DEFAULT_SCORING_CONFIG,
+        rosterConfig: body.rosterConfig || rosterDefault,
+        scoringConfig: body.scoringConfig || scoringDefault,
         waiverType: body.waiverType || 'FAAB',
         waiverBudget: body.waiverBudget || 100,
         lineupChangeFreq: body.lineupChangeFreq || 'DAILY',
